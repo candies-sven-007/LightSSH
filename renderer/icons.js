@@ -28,6 +28,9 @@ const ICONS = {
   eraser: '<path d="m7 21-4-4L14 6l7 7-8 8zM10 10l7 7M7 21h14"/>',
   chevUp: '<path d="m6 15 6-6 6 6"/>',
   chevDown: '<path d="m6 9 6 6 6-6"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  keyboard: '<rect x="2" y="6" width="20" height="12" rx="2.5"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/>',
+  arrowRight: '<path d="M5 12h14M13 6l6 6-6 6"/>',
   select: '<path d="M5 3h2M11 3h2M17 3h2M3 5v2M3 11v2M3 17v2M21 5v2M21 11v2M21 17v2M5 21h2M11 21h2M17 21h2"/>',
 };
 function icon(name, cls = '') {

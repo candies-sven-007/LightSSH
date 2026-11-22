@@ -262,28 +262,24 @@ ipcMain.handle('sftp:delete', async (_e, sid, dir, name, isDir) => {
 });
 
 // ---- window ----
-// Windows 11 22H2+ (build 22621) supports native acrylic; older systems get a CSS fallback
-function nativeGlass() {
-  if (process.platform !== 'win32') return false;
-  const build = Number(os.release().split('.')[2] || 0);
-  return build >= 22621;
-}
+// The window paints its own sky backdrop (no OS acrylic); title bar buttons follow the theme.
+ipcMain.handle('win:theme', (_e, dark) => {
+  try { win.setTitleBarOverlay({ color: '#00000000', symbolColor: dark ? '#f5f5f7' : '#1d1d1f', height: 44 }); } catch {}
+  nativeTheme.themeSource = dark ? 'dark' : 'light';
+});
 
 function createWindow() {
-  nativeTheme.themeSource = 'dark';
-  const glass = nativeGlass();
   win = new BrowserWindow({
-    width: 1200, height: 760, minWidth: 820, minHeight: 500,
-    backgroundColor: glass ? '#00000000' : '#101218',
-    ...(glass ? { backgroundMaterial: 'acrylic' } : {}),
+    width: 1240, height: 780, minWidth: 860, minHeight: 520,
+    backgroundColor: '#8fb2dc',
     title: 'LightSSH',
     icon: path.join(__dirname, 'renderer', 'icon.png'),
     autoHideMenuBar: true,
     titleBarStyle: 'hidden',
-    titleBarOverlay: { color: '#00000000', symbolColor: '#dfe3ea', height: 42 },
+    titleBarOverlay: { color: '#00000000', symbolColor: '#1d1d1f', height: 44 },
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: false },
   });
-  win.loadFile(path.join(__dirname, 'renderer', 'index.html'), { query: { glass: glass ? 'native' : 'css' } });
+  win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
 }
 

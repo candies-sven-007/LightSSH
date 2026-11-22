@@ -1,10 +1,14 @@
 # LightSSH
 
-简洁的 Windows SSH 客户端，柔和的毛玻璃界面，中文 / English 双语。
-A clean SSH client for Windows with a soft-glass UI, in Chinese and English.
+简洁的 Windows SSH 客户端：Termius 式的布局，背景随一天的时间从白天、黄昏到夜晚变化。中文 / English 双语。
+A clean SSH client for Windows: a Termius-style layout on a sky that changes from day to dusk to night. Chinese and English.
 
 ![Hosts](docs/home.png)
 ![Session](docs/session.png)
+
+| 编辑主机 / Host editor | 设置 / Settings |
+|---|---|
+| ![Editor](docs/editor.png) | ![Settings](docs/settings.png) |
 
 ## 功能 / Features
 
@@ -12,13 +16,12 @@ A clean SSH client for Windows with a soft-glass UI, in Chinese and English.
   Hosts with groups, search, duplicate and recents; password or key auth, secrets encrypted with DPAPI
 - 多标签终端：查找（Ctrl+F）、可点击链接、中文字符宽度正确、右键菜单
   Multi-tab terminal with search, clickable links, correct CJK width, context menu
-- 命令片段：一键在当前终端执行 / Snippets that run in the active terminal
+- 命令片段：在终端里一键执行 / Snippets you run from inside the terminal
 - SFTP：浏览、上传、下载、重命名、删除、新建文件夹、拖放上传、在终端中打开
   SFTP browse, upload, download, rename, delete, mkdir, drag & drop, open in terminal
-- 设置：语言、玻璃透明度、字号、字体、光标、选中即复制
-  Settings: language, glass opacity, font size and family, cursor, copy on select
-- Windows 11 22H2+ 使用原生亚克力，旧版本使用近似效果
-  Native acrylic on Windows 11 22H2+, a CSS fallback elsewhere
+- 背景：随时间 / 白天 / 黄昏 / 夜晚；以及语言、字号、字体、光标、选中即复制
+  Background: auto by time / day / dusk / night; plus language, font size and family, cursor, copy on select
+- 搜索框即连接：输入 user@host:port 回车 / The search box doubles as quick connect
 
 ## 下载 / Download
 

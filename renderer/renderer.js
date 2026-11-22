@@ -1,9 +1,10 @@
-/* LightSSH renderer */
+/* LightSSH renderer — Termius-style layout, Hark-style surfaces */
+const VERSION = '1.3.0';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-const DEFAULTS = { lang: '', fontSize: 14, fontFamily: 'Cascadia Mono', glass: 42, cursorStyle: 'block', copyOnSelect: true };
+const DEFAULTS = { lang: '', fontSize: 14, fontFamily: 'Cascadia Mono', sky: 'auto', cursorStyle: 'bar', copyOnSelect: true };
 let settings = { ...DEFAULTS };
 let hosts = [];
 let snippets = [];
@@ -11,8 +12,8 @@ let nav = 'hosts';
 const tabs = new Map();
 let activeTab = 'home';
 
-document.body.classList.add('glass-' + (new URLSearchParams(location.search).get('glass') || 'css'));
 hydrateIcons();
+$('#ver').textContent = VERSION;
 
 // ---------- i18n ----------
 function t(k, ...a) {
@@ -28,54 +29,66 @@ function applyI18n(root = document) {
 }
 function refreshTexts() {
   applyI18n();
-  $('#search').placeholder = t(nav === 'hosts' ? 'searchHosts' : 'searchSnippets');
-  $('#btnAddLabel').textContent = t(nav === 'hosts' ? 'newHost' : 'newSnippet');
-  renderSide(); renderHome();
+  $('#homeTabLabel').textContent = t(nav);
+  renderKeys();
+  renderHosts(); renderSnippets(); renderLive();
   for (const tab of tabs.values()) { updateStatus(tab); if (tab.files) renderFiles(tab); }
 }
 
+// ---------- sky / theme ----------
+function skyNow() {
+  if (settings.sky !== 'auto') return settings.sky;
+  const h = new Date().getHours();
+  return h >= 7 && h < 17 ? 'day' : h >= 17 && h < 20 ? 'dusk' : 'night';
+}
+let lastSky = '';
+function applySky() {
+  const sky = skyNow();
+  if (sky === lastSky) return;
+  lastSky = sky;
+  document.body.dataset.sky = sky;
+  document.body.classList.toggle('dark', sky !== 'day');
+  api.setTheme?.(sky !== 'day');
+}
+setInterval(applySky, 60 * 1000);
+
 // ---------- settings ----------
+const termFont = () => `"${settings.fontFamily}", "Cascadia Mono", Consolas, "Sarasa Mono SC", "Microsoft YaHei", monospace`;
+const saveSettings = () => api.settings.set(settings);
 function applySettings() {
-  document.documentElement.style.setProperty('--tint', (settings.glass / 100).toFixed(2));
+  applySky();
   for (const tab of tabs.values()) {
     Object.assign(tab.term.options, { fontSize: settings.fontSize, fontFamily: termFont(), cursorStyle: settings.cursorStyle });
     fit(tab);
   }
 }
-const termFont = () => `"${settings.fontFamily}", "Cascadia Mono", Consolas, "Sarasa Mono SC", "Microsoft YaHei", monospace`;
-const saveSettings = () => api.settings.set(settings);
-
-function openSettings() {
+function syncSettingsUI() {
+  $$('#setSky button').forEach((b) => b.classList.toggle('on', b.dataset.v === settings.sky));
   $$('#setLang button').forEach((b) => b.classList.toggle('on', b.dataset.v === settings.lang));
   $$('#setCursor button').forEach((b) => b.classList.toggle('on', b.dataset.v === settings.cursorStyle));
-  $('#setGlass').value = settings.glass; $('#setGlassV').textContent = settings.glass + '%';
   $('#setFont').value = settings.fontSize; $('#setFontV').textContent = settings.fontSize;
   $('#setFamily').value = settings.fontFamily;
   $('#setCopySel').checked = settings.copyOnSelect;
-  showModal('#setModal');
 }
-$('#btnSettings').onclick = openSettings;
-$('#setLang').onclick = (e) => { const v = e.target.dataset.v; if (!v) return; settings.lang = v; saveSettings(); openSettings(); refreshTexts(); };
-$('#setCursor').onclick = (e) => { const v = e.target.dataset.v; if (!v) return; settings.cursorStyle = v; saveSettings(); applySettings(); openSettings(); };
-$('#setGlass').oninput = (e) => { settings.glass = +e.target.value; $('#setGlassV').textContent = settings.glass + '%'; applySettings(); };
+$('#setSky').onclick = (e) => { const v = e.target.closest('button')?.dataset.v; if (!v) return; settings.sky = v; lastSky = ''; saveSettings(); applySettings(); syncSettingsUI(); };
+$('#setLang').onclick = (e) => { const v = e.target.dataset.v; if (!v) return; settings.lang = v; saveSettings(); syncSettingsUI(); refreshTexts(); };
+$('#setCursor').onclick = (e) => { const v = e.target.dataset.v; if (!v) return; settings.cursorStyle = v; saveSettings(); applySettings(); syncSettingsUI(); };
 $('#setFont').oninput = (e) => { settings.fontSize = +e.target.value; $('#setFontV').textContent = settings.fontSize; applySettings(); };
-$('#setGlass').onchange = $('#setFont').onchange = saveSettings;
+$('#setFont').onchange = saveSettings;
 $('#setFamily').onchange = (e) => { settings.fontFamily = e.target.value; applySettings(); saveSettings(); };
 $('#setCopySel').onchange = (e) => { settings.copyOnSelect = e.target.checked; saveSettings(); };
+function renderKeys() {
+  const rows = [['kFind', 'Ctrl F'], ['kCopy', 'Ctrl Shift C / V'], ['kTab', 'Ctrl Tab'], ['kClose', 'Ctrl Shift W'], ['kHome', 'Ctrl Shift T'], ['kFont', 'Ctrl + / − / 0'], ['kRe', 'Enter']];
+  $('#keysList').innerHTML = rows.map(([k, v]) => `<div class="key-row"><span>${t(k)}</span><span>${v.split(' ').map((x) => x === '/' ? '<i>/</i>' : `<kbd>${x}</kbd>`).join('')}</span></div>`).join('');
+}
 
-// ---------- modals / toast / prompt ----------
-function showModal(sel) { $(sel).classList.remove('hidden'); }
-function hideModals() { $$('.modal').forEach((m) => { if (m.id !== 'prompt') m.classList.add('hidden'); }); }
-document.addEventListener('click', (e) => { if (e.target.closest('[data-close]')) e.target.closest('.modal').classList.add('hidden'); });
-$$('.modal').forEach((m) => m.addEventListener('mousedown', (e) => { if (e.target === m && m.id !== 'prompt') m.classList.add('hidden'); }));
-
+// ---------- toast / prompt / drawers ----------
 let toastTimer;
 function toast(msg, err) {
   const el = $('#toast');
   el.textContent = msg; el.className = err ? 'err' : '';
   clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.add('hidden'), 3000);
 }
-
 function ask(title, { value = '', type = 'text', confirmOnly = false, danger = false } = {}) {
   return new Promise((resolve) => {
     const m = $('#prompt'), inp = $('#promptInput'), ok = $('#promptOk');
@@ -83,16 +96,19 @@ function ask(title, { value = '', type = 'text', confirmOnly = false, danger = f
     inp.classList.toggle('hidden', confirmOnly);
     inp.type = type; inp.value = value;
     ok.textContent = danger ? t('delete') : t('ok');
-    ok.className = 'btn ' + (danger ? 'danger solid' : 'primary');
+    ok.className = 'btn ' + (danger ? 'red' : 'dark');
     m.classList.remove('hidden');
     setTimeout(() => { if (confirmOnly) ok.focus(); else { inp.focus(); inp.select(); } }, 0);
-    const done = (v) => { m.classList.add('hidden'); $('#promptForm').onsubmit = null; $('#promptCancel').onclick = null; resolve(v); };
+    const done = (v) => { m.classList.add('hidden'); $('#promptForm').onsubmit = null; $('#promptCancel').onclick = null; m._cancel = null; resolve(v); };
     $('#promptForm').onsubmit = (e) => { e.preventDefault(); done(confirmOnly ? true : inp.value); };
     $('#promptCancel').onclick = () => done(confirmOnly ? false : null);
     m._cancel = () => done(confirmOnly ? false : null);
   });
 }
 const confirmBox = (msg) => ask(msg, { confirmOnly: true, danger: true });
+const openDrawer = (sel) => { closeDrawers(); $(sel).classList.add('open'); };
+const closeDrawers = () => $$('.drawer').forEach((d) => d.classList.remove('open'));
+document.addEventListener('click', (e) => { if (e.target.closest('[data-close]')) closeDrawers(); });
 
 // ---------- context menu ----------
 function showMenu(x, y, items) {
@@ -101,8 +117,8 @@ function showMenu(x, y, items) {
     : `<button data-i="${i}" class="${it.danger ? 'danger' : ''}" ${it.disabled ? 'disabled' : ''}>${icon(it.icon)}<span>${esc(it.label)}</span>${it.hint ? `<kbd>${it.hint}</kbd>` : ''}</button>`).join('');
   el.classList.remove('hidden');
   const r = el.getBoundingClientRect();
-  el.style.left = Math.min(x, innerWidth - r.width - 6) + 'px';
-  el.style.top = Math.min(y, innerHeight - r.height - 6) + 'px';
+  el.style.left = Math.max(6, Math.min(x, innerWidth - r.width - 6)) + 'px';
+  el.style.top = Math.max(6, Math.min(y, innerHeight - r.height - 6)) + 'px';
   el.onclick = (e) => { const b = e.target.closest('button'); if (!b) return; hideMenu(); items[b.dataset.i].run(); };
 }
 function hideMenu() { $('#ctx').classList.add('hidden'); }
@@ -110,74 +126,88 @@ document.addEventListener('mousedown', (e) => { if (!e.target.closest('#ctx')) h
 window.addEventListener('blur', hideMenu);
 
 // ---------- data ----------
-async function loadHosts() { hosts = await api.hosts.list(); renderSide(); renderHome(); }
-async function loadSnippets() { snippets = await api.snippets.list(); renderSide(); }
+async function loadHosts() { hosts = await api.hosts.list(); renderHosts(); renderLive(); }
+async function loadSnippets() { snippets = await api.snippets.list(); renderSnippets(); }
 
-const hue = (s) => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
-const avatar = (h) => `<div class="av" style="--h:${hue(h.name + h.host)}">${esc((h.name || '?').trim().slice(0, 1).toUpperCase())}</div>`;
+const hue = (s) => { let h = 7; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
+const avatar = (h, cls = '') => `<div class="av ${cls}" style="--h:${hue(h.name + h.host)}">${esc((h.name || '?').trim().slice(0, 1).toUpperCase())}</div>`;
 const groupBy = (list) => {
   const g = {}; list.forEach((h) => { (g[h.group || ''] ||= []).push(h); });
   return Object.keys(g).sort((a, b) => (a === '') - (b === '') || a.localeCompare(b)).map((k) => [k, g[k]]);
 };
-const activeHostIds = () => new Set([...tabs.values()].filter((x) => x.state === 'connected').map((x) => x.hostId));
+const liveHostIds = () => new Set([...tabs.values()].filter((x) => x.state === 'connected').map((x) => x.hostId));
+const hostAddr = (h) => `${h.username}@${h.host}${h.port != 22 ? ':' + h.port : ''}`;
 
-// ---------- sidebar ----------
-$$('.nav button').forEach((b) => b.onclick = () => {
-  nav = b.dataset.nav;
-  $$('.nav button').forEach((x) => x.classList.toggle('on', x === b));
-  $('#search').value = '';
-  refreshTexts();
-});
-$('#search').addEventListener('input', () => { renderSide(); renderHome(); });
-$('#btnAdd').onclick = () => (nav === 'hosts' ? openHostEditor(null) : openSnipEditor(null));
-
-function renderSide() {
-  const q = $('#search').value.trim().toLowerCase();
-  const el = $('#sideList');
-  if (nav === 'hosts') {
-    const live = activeHostIds();
-    const list = hosts.filter((h) => !q || [h.name, h.host, h.username, h.group].join(' ').toLowerCase().includes(q));
-    const groups = groupBy(list);
-    el.innerHTML = groups.map(([g, hs]) => `
-      ${groups.length > 1 || g ? `<div class="group">${esc(g || t('ungrouped'))}</div>` : ''}
-      ${hs.map((h) => `
-        <div class="item ${live.has(h.id) ? 'live' : ''}" data-id="${h.id}" title="${esc(h.username)}@${esc(h.host)}:${h.port}">
-          ${avatar(h)}<div class="it-text"><b>${esc(h.name)}</b><small>${esc(h.username)}@${esc(h.host)}</small></div>
-          <button class="ib" data-act="edit" title="${t('edit')}">${icon('edit')}</button>
-        </div>`).join('')}`).join('') || `<div class="side-empty">${t('emptySub')}</div>`;
-  } else {
-    const list = snippets.filter((s) => !q || (s.name + ' ' + s.command).toLowerCase().includes(q));
-    el.innerHTML = list.map((s) => `
-      <div class="item snip" data-sid="${s.id}" title="${esc(s.command)}">
-        <div class="sn-ic">${icon('play')}</div>
-        <div class="it-text"><b>${esc(s.name)}</b><small class="mono">${esc(s.command.split('\n')[0])}</small></div>
-        <button class="ib" data-act="edit" title="${t('edit')}">${icon('edit')}</button>
-      </div>`).join('') || `<div class="side-empty">${t('emptySnip')}</div>`;
-  }
+// ---------- navigation ----------
+function setNav(n) {
+  nav = n;
+  $$('#sidebar .nav').forEach((b) => b.classList.toggle('on', b.dataset.nav === n));
+  $$('#views .page').forEach((v) => v.classList.toggle('active', v.id === 'view-' + n && activeTab === 'home'));
+  $('#homeTabLabel').textContent = t(n);
+  if (n === 'settings') syncSettingsUI();
+  switchTab('home');
 }
+$$('#sidebar .nav').forEach((b) => b.onclick = () => setNav(b.dataset.nav));
 
-$('#sideList').addEventListener('click', (e) => {
-  const it = e.target.closest('.item'); if (!it) return;
-  const editing = e.target.closest('[data-act="edit"]');
-  if (it.dataset.id) { const h = hosts.find((x) => x.id === it.dataset.id); return editing ? openHostEditor(h) : openSession(h.id); }
-  const s = snippets.find((x) => x.id === it.dataset.sid);
-  if (editing) return openSnipEditor(s);
-  runSnippet(s);
-});
-$('#sideList').addEventListener('contextmenu', (e) => {
-  const it = e.target.closest('.item'); if (!it) return;
-  e.preventDefault();
-  if (it.dataset.id) hostMenu(e.clientX, e.clientY, hosts.find((x) => x.id === it.dataset.id));
-  else {
-    const s = snippets.find((x) => x.id === it.dataset.sid);
-    showMenu(e.clientX, e.clientY, [
-      { icon: 'play', label: t('run'), run: () => runSnippet(s) },
-      { icon: 'clipboard', label: t('paste'), run: () => runSnippet(s, false) },
-      { icon: 'edit', label: t('edit'), run: () => openSnipEditor(s) },
-      '-',
-      { icon: 'trash', label: t('delete'), danger: true, run: async () => { if (await confirmBox(t('confirmDelSnip', s.name))) { await api.snippets.remove(s.id); loadSnippets(); } } },
-    ]);
+// ---------- sidebar: live sessions ----------
+function renderLive() {
+  const list = [...tabs.values()];
+  $('#liveLabel').classList.toggle('hidden', !list.length);
+  $('#liveList').innerHTML = list.map((tab) => `
+    <button class="live ${tab.sid === activeTab ? 'on' : ''}" data-sid="${tab.sid}">
+      <span class="st" data-state="${tab.state}"></span><span class="tl">${esc(tab.label)}</span>
+    </button>`).join('');
+  $('#navHostCount').textContent = hosts.length || '';
+  $('#navSnipCount').textContent = snippets.length || '';
+}
+$('#liveList').addEventListener('click', (e) => { const b = e.target.closest('.live'); if (b) switchTab(b.dataset.sid); });
+
+// ---------- hosts page ----------
+function renderHosts() {
+  const q = $('#omni').value.trim().toLowerCase();
+  const list = hosts.filter((h) => !q || [h.name, h.host, h.username, h.group].join(' ').toLowerCase().includes(q));
+  const el = $('#hostsContent');
+  const live = liveHostIds();
+  if (!hosts.length) {
+    el.innerHTML = `<div class="empty card">
+      <div class="empty-ic">${icon('server')}</div><h3>${t('emptyTip')}</h3><p>${t('emptySub')}</p>
+      <button class="btn dark" data-home="new">${icon('plus')}<span>${t('newHost')}</span></button></div>`;
+    return;
   }
+  const card = (h) => `
+    <div class="hcard card" data-id="${h.id}">
+      <div class="hc-top">${avatar(h)}<span class="hc-meta">${esc(h.group || t('ungrouped'))} • ${h.authType === 'key' ? t('authKey') : t('authPwd')}</span>
+        ${live.has(h.id) ? '<span class="live-dot"></span>' : ''}
+        <button class="ib hc-edit" data-act="edit" title="${t('edit')}">${icon('edit')}</button></div>
+      <div class="hc-name">${esc(h.name)}</div>
+      <div class="hc-addr">${esc(hostAddr(h))}</div>
+    </div>`;
+  const recent = !q && hosts.length > 6 ? hosts.filter((h) => h.lastUsed).sort((a, b) => b.lastUsed - a.lastUsed).slice(0, 3) : [];
+  el.innerHTML = `
+    ${recent.length ? `<div class="sec-title">${t('recent')}</div><div class="hgrid">${recent.map(card).join('')}</div>` : ''}
+    ${groupBy(list).map(([g, hs]) => `<div class="sec-title">${esc(g || (recent.length ? t('allHosts') : t('ungrouped')))}<em>${hs.length}</em></div><div class="hgrid">${hs.map(card).join('')}</div>`).join('')}
+    ${!list.length ? `<div class="none">${esc(q)} · ${t('badQuick')}</div>` : ''}`;
+}
+$('#hostsContent').addEventListener('click', (e) => {
+  if (e.target.closest('[data-home="new"]')) return openHostEditor(null);
+  const c = e.target.closest('.hcard'); if (!c) return;
+  const h = hosts.find((x) => x.id === c.dataset.id);
+  if (e.target.closest('[data-act="edit"]')) openHostEditor(h); else openSession(h.id);
+});
+$('#hostsContent').addEventListener('contextmenu', (e) => {
+  const c = e.target.closest('.hcard'); if (!c) return;
+  e.preventDefault(); hostMenu(e.clientX, e.clientY, hosts.find((x) => x.id === c.dataset.id));
+});
+$('#btnNewHost').onclick = () => openHostEditor(null);
+$('#omni').addEventListener('input', renderHosts);
+$('#omni').addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  const v = e.target.value.trim(); if (!v) return;
+  const m = v.match(/^(?:ssh\s+)?(?:-p\s*(\d+)\s+)?([^@\s]+)@([^:\s]+)(?::(\d+))?(?:\s+-p\s*(\d+))?$/);
+  if (m) { openSession(null, { username: m[2], host: m[3], port: Number(m[4] || m[1] || m[5]) || 22 }); e.target.value = ''; renderHosts(); return; }
+  const q = v.toLowerCase();
+  const hit = hosts.filter((h) => [h.name, h.host, h.username, h.group].join(' ').toLowerCase().includes(q));
+  if (hit.length === 1) { openSession(hit[0].id); e.target.value = ''; renderHosts(); } else if (!hit.length) toast(t('badQuick'), true);
 });
 
 function hostMenu(x, y, h) {
@@ -190,62 +220,51 @@ function hostMenu(x, y, h) {
   ]);
 }
 async function deleteHost(h) {
-  if (await confirmBox(t('confirmDelHost', h.name))) { await api.hosts.remove(h.id); hideModals(); loadHosts(); }
+  if (await confirmBox(t('confirmDelHost', h.name))) { await api.hosts.remove(h.id); closeDrawers(); loadHosts(); }
 }
 
-function runSnippet(s, run = true) {
-  const tab = tabs.get(activeTab);
+// ---------- snippets page ----------
+function renderSnippets() {
+  const q = $('#snipSearch').value.trim().toLowerCase();
+  const list = snippets.filter((s) => !q || (s.name + ' ' + s.command).toLowerCase().includes(q));
+  $('#snipContent').innerHTML = !snippets.length
+    ? `<div class="empty card"><div class="empty-ic">${icon('zap')}</div><h3>${t('snippets')}</h3><p>${t('emptySnip')}</p>
+        <button class="btn dark" data-snip="new">${icon('plus')}<span>${t('newSnippet')}</span></button></div>`
+    : `<div class="sgrid">${list.map((s) => `
+      <div class="scard card" data-sid="${s.id}">
+        <div class="hc-top"><span class="sn-ic">${icon('zap')}</span><span class="hc-meta">${t('snipCount', s.command.split('\n').length)}</span>
+          <button class="ib hc-edit" data-act="edit" title="${t('edit')}">${icon('edit')}</button></div>
+        <div class="hc-name">${esc(s.name)}</div>
+        <pre class="sn-cmd">${esc(s.command)}</pre>
+      </div>`).join('')}</div>`;
+  renderLive();
+}
+$('#snipSearch').addEventListener('input', renderSnippets);
+$('#btnNewSnip').onclick = () => openSnipEditor(null);
+$('#snipContent').addEventListener('click', (e) => {
+  if (e.target.closest('[data-snip="new"]')) return openSnipEditor(null);
+  const c = e.target.closest('.scard'); if (c) openSnipEditor(snippets.find((x) => x.id === c.dataset.sid));
+});
+$('#snipContent').addEventListener('contextmenu', (e) => {
+  const c = e.target.closest('.scard'); if (!c) return;
+  e.preventDefault();
+  const s = snippets.find((x) => x.id === c.dataset.sid);
+  showMenu(e.clientX, e.clientY, [
+    { icon: 'edit', label: t('edit'), run: () => openSnipEditor(s) },
+    { icon: 'copy', label: t('copy'), run: () => { api.clip.write(s.command); toast(t('copied')); } },
+    '-',
+    { icon: 'trash', label: t('delete'), danger: true, run: async () => { if (await confirmBox(t('confirmDelSnip', s.name))) { await api.snippets.remove(s.id); loadSnippets(); } } },
+  ]);
+});
+function runSnippet(tab, s, run = true) {
   if (!tab || tab.state !== 'connected') return toast(t('noSession'), true);
   api.ssh.write(tab.sid, s.command.replace(/\r?\n/g, '\r') + (run ? '\r' : ''));
   tab.term.focus();
 }
 
-// ---------- home ----------
-function renderHome() {
-  const q = $('#search').value.trim().toLowerCase();
-  const list = hosts.filter((h) => !q || [h.name, h.host, h.username, h.group].join(' ').toLowerCase().includes(q));
-  const el = $('#homeContent');
-  if (!hosts.length) {
-    el.innerHTML = `<div class="empty"><div class="empty-ic">${icon('server')}</div><h3>${t('emptyTip')}</h3><p>${t('emptySub')}</p>
-      <button class="btn primary" data-home="new">${icon('plus')}<span>${t('newHost')}</span></button></div>`;
-    return;
-  }
-  const card = (h) => `
-    <div class="hcard" data-id="${h.id}">
-      ${avatar(h)}
-      <div class="hc-body"><b>${esc(h.name)}</b><small>${esc(h.username)}@${esc(h.host)}${h.port != 22 ? ':' + h.port : ''}</small></div>
-      <span class="hc-auth" title="${h.authType === 'key' ? t('authKey') : t('authPwd')}">${icon(h.authType === 'key' ? 'key' : 'lock')}</span>
-      <button class="ib hc-edit" data-act="edit" title="${t('edit')}">${icon('edit')}</button>
-    </div>`;
-  const recent = !q ? hosts.filter((h) => h.lastUsed).sort((a, b) => b.lastUsed - a.lastUsed).slice(0, 4) : [];
-  el.innerHTML = `
-    <div class="sec-head"><h2>${t('hosts')}</h2><span class="count">${list.length}</span><span class="grow"></span>
-      <button class="btn primary sm" data-home="new">${icon('plus')}<span>${t('newHost')}</span></button></div>
-    ${recent.length ? `<div class="sec-title">${icon('clock')}${t('recent')}</div><div class="hgrid">${recent.map(card).join('')}</div>` : ''}
-    ${groupBy(list).map(([g, hs]) => `<div class="sec-title">${icon('folder')}${esc(g || (recent.length ? t('allHosts') : t('ungrouped')))}</div><div class="hgrid">${hs.map(card).join('')}</div>`).join('')}`;
-}
-$('#homeContent').addEventListener('click', (e) => {
-  if (e.target.closest('[data-home="new"]')) return openHostEditor(null);
-  const c = e.target.closest('.hcard'); if (!c) return;
-  const h = hosts.find((x) => x.id === c.dataset.id);
-  if (e.target.closest('[data-act="edit"]')) openHostEditor(h); else openSession(h.id);
-});
-$('#homeContent').addEventListener('contextmenu', (e) => {
-  const c = e.target.closest('.hcard'); if (!c) return;
-  e.preventDefault(); hostMenu(e.clientX, e.clientY, hosts.find((x) => x.id === c.dataset.id));
-});
-
-$('#quick').addEventListener('keydown', (e) => {
-  if (e.key !== 'Enter') return;
-  const v = e.target.value.trim(); if (!v) return;
-  const m = v.match(/^(?:ssh\s+)?(?:-p\s*(\d+)\s+)?([^@\s]+)@([^:\s]+)(?::(\d+))?(?:\s+-p\s*(\d+))?$/);
-  if (!m) return toast(t('badQuick'), true);
-  openSession(null, { username: m[2], host: m[3], port: Number(m[4] || m[1] || m[5]) || 22 });
-  e.target.value = '';
-});
-
-// ---------- host editor ----------
+// ---------- host editor (drawer) ----------
 const form = $('#hostForm'), fe = form.elements;
+let connectAfterSave = false;
 function setAuthUI() {
   const key = fe.authType.value === 'key';
   $('.auth-pwd', form).classList.toggle('hidden', key);
@@ -269,39 +288,41 @@ function openHostEditor(h, duplicate = false) {
   $('#btnDel').classList.toggle('hidden', !h || duplicate);
   $('#btnDup').classList.toggle('hidden', !h || duplicate);
   setAuthUI();
-  showModal('#hostModal');
-  setTimeout(() => (h ? fe.name : fe.host).focus(), 0);
+  openDrawer('#hostDrawer');
+  setTimeout(() => (h ? fe.name : fe.host).focus(), 180);
 }
 form.addEventListener('change', (e) => { if (e.target.name === 'authType') setAuthUI(); });
 $('#btnPickKey').onclick = async () => { const p = await api.pickKey(); if (p) fe.keyPath.value = p; };
 $('#btnDel').onclick = () => { const h = hosts.find((x) => x.id === fe.id.value); if (h) deleteHost(h); };
 $('#btnDup').onclick = () => { const h = hosts.find((x) => x.id === fe.id.value); if (h) openHostEditor(h, true); };
+$('#btnSaveConnect').onclick = () => { connectAfterSave = true; form.requestSubmit(); };
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
-  await api.hosts.save(Object.fromEntries(new FormData(form).entries()));
-  $('#hostModal').classList.add('hidden');
-  toast(t('saved'));
-  loadHosts();
+  const go = connectAfterSave; connectAfterSave = false;
+  const saved = await api.hosts.save(Object.fromEntries(new FormData(form).entries()));
+  closeDrawers();
+  await loadHosts();
+  if (go && saved?.id) openSession(saved.id); else toast(t('saved'));
 });
 
-// ---------- snippet editor ----------
+// ---------- snippet editor (drawer) ----------
 const sform = $('#snipForm'), se = sform.elements;
 function openSnipEditor(s) {
   sform.reset();
   $('#snipTitle').textContent = s ? t('editSnippet') : t('addSnippet');
   se.id.value = s?.id || ''; se.name.value = s?.name || ''; se.command.value = s?.command || '';
   $('#snipDel').classList.toggle('hidden', !s);
-  showModal('#snipModal');
-  setTimeout(() => (s ? se.name : se.command).focus(), 0);
+  openDrawer('#snipDrawer');
+  setTimeout(() => (s ? se.name : se.command).focus(), 180);
 }
 $('#snipDel').onclick = async () => {
   const s = snippets.find((x) => x.id === se.id.value);
-  if (s && await confirmBox(t('confirmDelSnip', s.name))) { await api.snippets.remove(s.id); $('#snipModal').classList.add('hidden'); loadSnippets(); }
+  if (s && await confirmBox(t('confirmDelSnip', s.name))) { await api.snippets.remove(s.id); closeDrawers(); loadSnippets(); }
 };
 sform.addEventListener('submit', async (e) => {
   e.preventDefault();
   await api.snippets.save(Object.fromEntries(new FormData(sform).entries()));
-  $('#snipModal').classList.add('hidden');
+  closeDrawers();
   loadSnippets();
 });
 
@@ -309,10 +330,12 @@ sform.addEventListener('submit', async (e) => {
 function switchTab(id) {
   activeTab = id;
   $$('#tabbar .tab').forEach((el) => el.classList.toggle('active', el.dataset.tab === id));
-  $$('#views .view').forEach((el) => el.classList.toggle('active', el.id === 'view-' + id));
+  $$('#views .view').forEach((el) => el.classList.toggle('active', id === 'home' ? el.id === 'view-' + nav : el.id === 'view-' + id));
+  $$('#sidebar .nav').forEach((b) => b.classList.toggle('on', id === 'home' && b.dataset.nav === nav));
+  renderLive();
   const tab = tabs.get(id);
-  if (tab) setTimeout(() => { fit(tab); tab.term.focus(); }, 0);
-  else setTimeout(() => $('#quick').focus(), 0);
+  if (tab) { closeDrawers(); setTimeout(() => { fit(tab); tab.term.focus(); }, 0); }
+  else if (nav === 'hosts') setTimeout(() => $('#omni').focus(), 0);
 }
 $('#tabbar').addEventListener('click', (e) => {
   const el = e.target.closest('.tab'); if (!el) return;
@@ -325,21 +348,20 @@ $('#tabbar').addEventListener('contextmenu', (e) => {
   e.preventDefault();
   const tab = tabs.get(el.dataset.tab);
   showMenu(e.clientX, e.clientY, [
-    { icon: 'refresh', label: t('reconnect'), disabled: tab.state === 'connected', run: () => connect(tab) },
+    { icon: 'refresh', label: t('reconnect'), disabled: tab.state === 'connecting', run: () => reconnect(tab) },
     { icon: 'copy', label: t('duplicate'), run: () => openSession(tab.hostId, tab.quick) },
     '-',
     { icon: 'x', label: t('close'), hint: 'Ctrl+Shift+W', run: () => closeTab(tab.sid) },
   ]);
 });
-
 function closeTab(sid) {
   const tab = tabs.get(sid); if (!tab) return;
   api.ssh.close(sid);
   tab.term.dispose(); tab.ro.disconnect();
   tab.tabEl.remove(); tab.view.remove();
   tabs.delete(sid);
-  renderSide();
   if (activeTab === sid) { const last = [...tabs.keys()].pop(); switchTab(last || 'home'); }
+  renderLive(); renderHosts();
 }
 
 // ---------- sessions ----------
@@ -347,6 +369,7 @@ let seq = 0;
 function openSession(hostId, quick) {
   const h = hostId ? hosts.find((x) => x.id === hostId) : null;
   const label = h ? h.name : `${quick.username}@${quick.host}`;
+  const addr = h ? `${h.username}@${h.host}:${h.port}` : `${quick.username}@${quick.host}:${quick.port}`;
   const sid = 's' + (++seq) + '_' + Date.now();
 
   const tabEl = document.createElement('div');
@@ -358,47 +381,50 @@ function openSession(hostId, quick) {
   const view = document.createElement('section');
   view.className = 'view session'; view.id = 'view-' + sid;
   view.innerHTML = `
-    <div class="sess-body">
-      <div class="term-wrap">
-        <div class="term-bar">
-          <span class="status"></span><span class="addr">${esc(h ? `${h.username}@${h.host}:${h.port}` : `${quick.username}@${quick.host}:${quick.port}`)}</span><span class="grow"></span>
-          <button class="ib" data-act="find" title="${t('find')} (Ctrl+F)">${icon('search')}</button>
-          <button class="ib" data-act="reconnect" title="${t('reconnect')}">${icon('refresh')}</button>
-          <button class="ib tg" data-act="sftp" title="${t('sftp')}">${icon('folder')}</button>
-        </div>
-        <div class="findbar hidden">
-          ${icon('search')}<input spellcheck="false"><span class="fcount"></span>
-          <button class="ib" data-f="prev">${icon('chevUp')}</button><button class="ib" data-f="next">${icon('chevDown')}</button><button class="ib" data-f="close">${icon('x')}</button>
-        </div>
-        <div class="term"></div>
+    <div class="term-wrap">
+      <div class="term-bar">
+        <span class="status"></span><span class="addr">${esc(addr)}</span><span class="grow"></span>
+        <button class="ib" data-act="snips" title="${t('snippets')}">${icon('zap')}</button>
+        <button class="ib" data-act="find" title="${t('find')} (Ctrl+F)">${icon('search')}</button>
+        <button class="ib" data-act="reconnect" title="${t('reconnect')}">${icon('refresh')}</button>
+        <button class="ib" data-act="sftp" title="${t('sftp')}">${icon('folder')}</button>
       </div>
-      <div class="sftp hidden">
+      <div class="findbar hidden">
+        ${icon('search')}<input spellcheck="false"><span class="fcount"></span>
+        <button class="ib" data-f="prev">${icon('chevUp')}</button><button class="ib" data-f="next">${icon('chevDown')}</button><button class="ib" data-f="close">${icon('x')}</button>
+      </div>
+      <div class="snip-pop hidden"></div>
+      <div class="term"></div>
+    </div>
+    <div class="sftp card hidden">
+      <div class="sftp-head">
+        <div class="card-label">${icon('folder')}<span>SFTP • ${esc(label)}</span></div>
         <div class="sftp-bar">
           <button class="ib" data-s="up" title="${t('up')}">${icon('up')}</button>
           <input class="input path mono" spellcheck="false">
           <button class="ib" data-s="refresh" title="${t('refresh')}">${icon('refresh')}</button>
-        </div>
-        <div class="sftp-bar sub">
-          <button class="btn sm" data-s="upload">${icon('upload')}<span>${t('upload')}</span></button>
-          <button class="btn sm ghost" data-s="mkdir">${icon('folderPlus')}<span>${t('mkdir')}</span></button>
-          <span class="grow"></span>
           <button class="ib tg" data-s="hidden" title="${t('hidden')}">${icon('eye')}</button>
         </div>
-        <div class="files"></div>
-        <div class="sftp-foot"><span class="fcnt"></span><span class="grow"></span><span>${t('dropHere')}</span></div>
-        <div class="prog hidden"><div class="prog-bar"></div><span></span></div>
       </div>
+      <div class="files"></div>
+      <div class="sftp-foot">
+        <button class="btn dark sm" data-s="upload">${icon('upload')}<span>${t('upload')}</span></button>
+        <button class="btn sm" data-s="mkdir">${icon('folderPlus')}<span>${t('mkdir')}</span></button>
+        <span class="grow"></span><span class="fcnt"></span>
+      </div>
+      <div class="prog hidden"><div class="prog-bar"></div><span></span></div>
+      <div class="drop-hint">${icon('upload')}<span>${t('dropHere')}</span></div>
     </div>`;
   $('#views').appendChild(view);
 
   const term = new Terminal({
-    fontFamily: termFont(), fontSize: settings.fontSize, lineHeight: 1.15,
+    fontFamily: termFont(), fontSize: settings.fontSize, lineHeight: 1.2,
     cursorBlink: true, cursorStyle: settings.cursorStyle, cursorInactiveStyle: 'outline',
     allowProposedApi: true, allowTransparency: true, scrollback: 10000, smoothScrollDuration: 80,
     theme: {
-      background: '#00000000', foreground: '#dfe3ea', cursor: '#7fe3d8', cursorAccent: '#0b0d12', selectionBackground: 'rgba(127,227,216,0.25)',
-      black: '#2a2e38', red: '#f28b8b', green: '#9ad99a', yellow: '#ecc98a', blue: '#80b4f2', magenta: '#cc9cf0', cyan: '#7fe3d8', white: '#dfe3ea',
-      brightBlack: '#6b7280', brightRed: '#ff9e9e', brightGreen: '#b2e8b2', brightYellow: '#f5d9a3', brightBlue: '#9cc7ff', brightMagenta: '#dcb4f7', brightCyan: '#a3f0e7', brightWhite: '#ffffff',
+      background: '#00000000', foreground: '#e9eaf0', cursor: '#a6b4fa', cursorAccent: '#1e1f24', selectionBackground: 'rgba(166,180,250,0.28)',
+      black: '#2a2b34', red: '#ff8a80', green: '#a5e3a0', yellow: '#f3d58f', blue: '#8fa8ff', magenta: '#d3a6f5', cyan: '#8ad8e8', white: '#e9eaf0',
+      brightBlack: '#7b8499', brightRed: '#ffa79f', brightGreen: '#c0efbb', brightYellow: '#f8e2ac', brightBlue: '#b1c0ff', brightMagenta: '#e2c2fa', brightCyan: '#ade6f1', brightWhite: '#ffffff',
     },
   });
   const fitAddon = new FitAddon.FitAddon();
@@ -407,7 +433,7 @@ function openSession(hostId, quick) {
   term.loadAddon(search);
   term.loadAddon(new Unicode11Addon.Unicode11Addon());
   term.unicode.activeVersion = '11';
-  term.loadAddon(new WebLinksAddon.WebLinksAddon((ev, uri) => { if (ev.ctrlKey || ev.button === 0) window.open(uri); }));
+  term.loadAddon(new WebLinksAddon.WebLinksAddon((_ev, uri) => window.open(uri)));
   term.open($('.term', view));
 
   const tab = { sid, hostId, quick, label, term, fitAddon, search, view, tabEl, state: 'connecting', cwd: '', files: null, showHidden: false, password: null };
@@ -434,23 +460,44 @@ function openSession(hostId, quick) {
     if (e.ctrlKey && e.shiftKey && e.code === 'KeyC') { const s = term.getSelection(); if (s) api.clip.write(s); return false; }
     if (e.ctrlKey && e.shiftKey && e.code === 'KeyV') { paste(); return false; }
     if (e.ctrlKey && !e.shiftKey && e.code === 'KeyF') { openFind(tab); return false; }
-    if (e.ctrlKey && (e.code === 'Tab' || e.code === 'Equal' || e.code === 'Minus')) return false;
+    if (e.ctrlKey && (e.code === 'Tab' || e.code === 'Equal' || e.code === 'Minus' || e.code === 'Digit0')) return false;
+    if (e.ctrlKey && e.shiftKey && (e.code === 'KeyW' || e.code === 'KeyT')) return false;
     return true;
   });
   tab.ro = new ResizeObserver(() => fit(tab));
   tab.ro.observe($('.term', view));
 
   view.addEventListener('click', (e) => {
-    const act = e.target.closest('[data-act]')?.dataset.act;
-    if (act === 'reconnect' && tab.state !== 'connecting') { if (tab.state === 'connected') api.ssh.close(sid); setTimeout(() => connect(tab), 150); }
+    const btn = e.target.closest('[data-act]'); const act = btn?.dataset.act;
+    if (act === 'reconnect') reconnect(tab);
     if (act === 'sftp') toggleSftp(tab);
     if (act === 'find') openFind(tab);
+    if (act === 'snips') toggleSnipPop(tab);
+    const sp = e.target.closest('.sp-item');
+    if (sp) { $('.snip-pop', view).classList.add('hidden'); runSnippet(tab, snippets.find((x) => x.id === sp.dataset.sid), !e.shiftKey); }
+    if (!e.target.closest('.snip-pop') && act !== 'snips') $('.snip-pop', view).classList.add('hidden');
   });
   bindFind(tab);
   bindSftp(tab);
 
   switchTab(sid);
   connect(tab);
+}
+
+function toggleSnipPop(tab) {
+  const pop = $('.snip-pop', tab.view);
+  if (!pop.classList.contains('hidden')) return pop.classList.add('hidden');
+  pop.innerHTML = snippets.length
+    ? snippets.map((s) => `<button class="sp-item" data-sid="${s.id}">${icon('play')}<div><b>${esc(s.name)}</b><small class="mono">${esc(s.command.split('\n')[0])}</small></div></button>`).join('')
+    : `<div class="sp-empty">${t('noSnipHere')}</div>`;
+  pop.classList.remove('hidden');
+}
+
+function reconnect(tab) {
+  if (tab.state === 'connecting') return;
+  if (tab.state === 'connected') api.ssh.close(tab.sid);
+  tab.state = 'closed';
+  setTimeout(() => connect(tab), 150);
 }
 
 function fit(tab) {
@@ -463,6 +510,7 @@ function updateStatus(tab) {
   const st = $('.status', tab.view);
   st.textContent = label; st.dataset.state = tab.state;
   $('.st', tab.tabEl).dataset.state = tab.state;
+  renderLive();
 }
 
 async function connect(tab) {
@@ -481,8 +529,8 @@ async function connect(tab) {
     tab.password = password;
     tab.state = 'connected'; updateStatus(tab);
     tab.term.focus();
-    renderSide();
-    if (tab.hostId) { const hh = hosts.find((x) => x.id === tab.hostId); if (hh) { hh.lastUsed = Date.now(); renderHome(); } }
+    if (h) h.lastUsed = Date.now();
+    renderHosts();
     if (!$('.sftp', tab.view).classList.contains('hidden')) sftpLoad(tab);
   } catch (err) {
     tab.password = null;
@@ -496,12 +544,12 @@ api.ssh.onData((sid, d) => { const tab = tabs.get(sid); if (tab) tab.term.write(
 api.ssh.onError((sid, m) => { const tab = tabs.get(sid); if (tab) tab.term.write(`\r\n\x1b[31m${m}\x1b[0m\r\n`); });
 api.ssh.onClosed((sid) => {
   const tab = tabs.get(sid); if (!tab || tab.state === 'closed') return;
-  tab.state = 'closed'; updateStatus(tab); renderSide();
+  tab.state = 'closed'; updateStatus(tab); renderHosts();
   tab.term.write(`\r\n\x1b[33m${t('disconnected')}\x1b[0m · \x1b[90m${t('pressEnter')}\x1b[0m\r\n`);
 });
 
 // ---------- find ----------
-const FIND_OPTS = { decorations: { matchOverviewRuler: '#7fe3d8', activeMatchColorOverviewRuler: '#ffffff', matchBackground: '#2c5a55', activeMatchBackground: '#4a8f87' } };
+const FIND_OPTS = { decorations: { matchOverviewRuler: '#a6b4fa', activeMatchColorOverviewRuler: '#ffffff', matchBackground: '#3b4270', activeMatchBackground: '#5a66b0' } };
 function openFind(tab) {
   const bar = $('.findbar', tab.view); bar.classList.remove('hidden');
   const inp = $('input', bar); inp.focus(); inp.select();
@@ -514,7 +562,7 @@ function bindFind(tab) {
   });
   inp.addEventListener('input', () => tab.search.findNext(inp.value, { ...FIND_OPTS, incremental: true }));
   inp.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') close();
+    if (e.key === 'Escape') { e.stopPropagation(); close(); }
     if (e.key === 'Enter') e.shiftKey ? tab.search.findPrevious(inp.value, FIND_OPTS) : tab.search.findNext(inp.value, FIND_OPTS);
   });
   bar.addEventListener('click', (e) => {
@@ -533,7 +581,6 @@ function toggleSftp(tab) {
   setTimeout(() => fit(tab), 0);
   if (!pane.classList.contains('hidden') && tab.state === 'connected' && !tab.cwd) sftpLoad(tab);
 }
-
 async function sftpLoad(tab, dir) {
   try {
     if (!dir) dir = tab.cwd || await api.sftp.home(tab.sid);
@@ -543,7 +590,6 @@ async function sftpLoad(tab, dir) {
     renderFiles(tab);
   } catch (err) { toast(t('failed', cleanErr(err)), true); }
 }
-
 function fmtSize(n) {
   if (n < 1024) return n + ' B';
   const u = ['KB', 'MB', 'GB', 'TB']; let i = -1;
@@ -556,7 +602,6 @@ function fmtDate(s) {
   return d.getFullYear() === now.getFullYear() ? `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}` : `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 const fullPath = (tab, name) => (tab.cwd.endsWith('/') ? tab.cwd : tab.cwd + '/') + name;
-
 function renderFiles(tab) {
   if (!tab.files) return;
   const list = tab.files.filter((f) => f.name !== '.' && f.name !== '..' && (tab.showHidden || !f.name.startsWith('.')));
@@ -569,7 +614,6 @@ function renderFiles(tab) {
     </div>`).join('') : `<div class="dir-empty">${t('emptyDir')}</div>`;
   $('.fcnt', tab.view).textContent = t('files', list.length);
 }
-
 async function fileAction(tab, act, f) {
   try {
     if (act === 'open') { if (f.isDir || f.isLink) return sftpLoad(tab, fullPath(tab, f.name)); return fileAction(tab, 'download', f); }
@@ -580,7 +624,6 @@ async function fileAction(tab, act, f) {
     if (act === 'cd') { const p = f ? fullPath(tab, f.name) : tab.cwd; api.ssh.write(tab.sid, `cd '${p.replace(/'/g, `'\\''`)}'\r`); tab.term.focus(); }
   } catch (err) { hideProg(tab); toast(t('failed', cleanErr(err)), true); }
 }
-
 function bindSftp(tab) {
   const v = tab.view, pane = $('.sftp', v);
   const up = () => { const p = tab.cwd.replace(/\/+$/, ''); sftpLoad(tab, p.slice(0, p.lastIndexOf('/')) || '/'); };
@@ -617,7 +660,6 @@ function bindSftp(tab) {
     ]);
   });
   $('.path', v).addEventListener('keydown', (e) => { if (e.key === 'Enter') sftpLoad(tab, e.target.value.trim() || '/'); });
-
   pane.addEventListener('dragover', (e) => { e.preventDefault(); pane.classList.add('drag'); });
   pane.addEventListener('dragleave', (e) => { if (!pane.contains(e.relatedTarget)) pane.classList.remove('drag'); });
   pane.addEventListener('drop', async (e) => {
@@ -628,7 +670,6 @@ function bindSftp(tab) {
     catch (err) { toast(t('failed', cleanErr(err)), true); } finally { hideProg(tab); }
   });
 }
-
 function hideProg(tab) { $('.prog', tab.view).classList.add('hidden'); }
 api.sftp.onProgress((sid, name, done, total) => {
   const tab = tabs.get(sid); if (!tab) return;
@@ -642,7 +683,8 @@ api.sftp.onProgress((sid, name, done, total) => {
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     hideMenu();
-    if (!$('#prompt').classList.contains('hidden')) $('#prompt')._cancel?.(); else hideModals();
+    if ($('#prompt')._cancel) $('#prompt')._cancel(); else closeDrawers();
+    $$('.snip-pop').forEach((p) => p.classList.add('hidden'));
   }
   if (e.ctrlKey && e.key === 'Tab') {
     e.preventDefault();
@@ -650,7 +692,7 @@ document.addEventListener('keydown', (e) => {
     switchTab(ids[(ids.indexOf(activeTab) + (e.shiftKey ? ids.length - 1 : 1)) % ids.length]);
   }
   if (e.ctrlKey && e.shiftKey && e.code === 'KeyW' && activeTab !== 'home') { e.preventDefault(); closeTab(activeTab); }
-  if (e.ctrlKey && e.shiftKey && e.code === 'KeyT') { e.preventDefault(); switchTab('home'); }
+  if (e.ctrlKey && e.shiftKey && e.code === 'KeyT') { e.preventDefault(); setNav('hosts'); }
   if (e.ctrlKey && !e.shiftKey && (e.code === 'Equal' || e.code === 'Minus' || e.code === 'Digit0')) {
     e.preventDefault();
     settings.fontSize = e.code === 'Digit0' ? 14 : Math.min(24, Math.max(10, settings.fontSize + (e.code === 'Minus' ? -1 : 1)));
@@ -661,9 +703,10 @@ document.addEventListener('keydown', (e) => {
 // ---------- init ----------
 (async function init() {
   settings = { ...DEFAULTS, ...(await api.settings.get()) };
+  if (!['auto', 'day', 'dusk', 'night'].includes(settings.sky)) settings.sky = 'auto';
   if (!settings.lang) settings.lang = navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en';
   applySettings();
   await Promise.all([loadHosts(), loadSnippets()]);
   refreshTexts();
-  $('#quick').focus();
+  $('#omni').focus();
 })();

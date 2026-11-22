@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('api', {
     save: (h) => ipcRenderer.invoke('hosts:save', h),
     remove: (id) => ipcRenderer.invoke('hosts:delete', id),
   },
+  setTheme: (dark) => ipcRenderer.invoke('win:theme', dark),
   snippets: {
     list: () => ipcRenderer.invoke('snippets:list'),
     save: (s) => ipcRenderer.invoke('snippets:save', s),

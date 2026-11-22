@@ -22,6 +22,11 @@ const I18N = {
     language: '语言', glass: '玻璃透明度', fontSize: '字号', fontFamily: '终端字体', cursor: '光标样式',
     cBlock: '方块', cBar: '竖线', cUnder: '下划线', copyOnSelect: '选中即复制', done: '完成',
     files: '{0} 项', emptyDir: '空文件夹', prev: '上一个', next: '下一个', run: '执行', open: '打开', close: '关闭',
+    sessions: '会话', omniPh: '搜索主机，或输入 user@host:端口 回车直接连接', appearance: '外观', background: '背景',
+    skyAuto: '随时间', skyDay: '白天', skyDusk: '黄昏', skyNight: '夜晚', terminal: '终端', shortcuts: '快捷键',
+    general: '基本', address: '地址', auth: '认证', saveConnect: '保存并连接', noSnipHere: '还没有片段，去「片段」页添加。',
+    kFind: '在终端中查找', kCopy: '复制 / 粘贴', kTab: '切换标签', kClose: '关闭标签', kHome: '回到主页', kFont: '字号 放大 / 缩小 / 还原', kRe: '断开后重连',
+    snipCount: '{0} 行', hostsSub: '{0} 台主机', pressRe: '按 Enter',
   },
   en: {
     hosts: 'Hosts', snippets: 'Snippets', searchHosts: 'Search hosts', searchSnippets: 'Search snippets',
@@ -46,5 +51,10 @@ const I18N = {
     language: 'Language', glass: 'Glass opacity', fontSize: 'Font size', fontFamily: 'Terminal font', cursor: 'Cursor',
     cBlock: 'Block', cBar: 'Bar', cUnder: 'Underline', copyOnSelect: 'Copy on select', done: 'Done',
     files: '{0} items', emptyDir: 'Empty folder', prev: 'Previous', next: 'Next', run: 'Run', open: 'Open', close: 'Close',
+    sessions: 'Sessions', omniPh: 'Search hosts, or type user@host:port and press Enter', appearance: 'Appearance', background: 'Background',
+    skyAuto: 'Auto', skyDay: 'Day', skyDusk: 'Dusk', skyNight: 'Night', terminal: 'Terminal', shortcuts: 'Shortcuts',
+    general: 'General', address: 'Address', auth: 'Authentication', saveConnect: 'Save & Connect', noSnipHere: 'No snippets yet. Add some on the Snippets page.',
+    kFind: 'Find in terminal', kCopy: 'Copy / Paste', kTab: 'Switch tabs', kClose: 'Close tab', kHome: 'Go home', kFont: 'Font bigger / smaller / reset', kRe: 'Reconnect after disconnect',
+    snipCount: '{0} lines', hostsSub: '{0} hosts', pressRe: 'Press Enter',
   },
 };
