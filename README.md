@@ -1,7 +1,7 @@
 # LightSSH
 
-简洁的 Windows SSH 客户端：Termius 式的布局，背景随一天的时间从白天、黄昏到夜晚变化。中文 / English 双语。
-A clean SSH client for Windows: a Termius-style layout on a sky that changes from day to dusk to night. Chinese and English.
+简洁的 Windows SSH 客户端：Termius 式的布局，安静的哑光界面，深色 / 浅色两套主题。中文 / English 双语。
+A clean SSH client for Windows: a Termius-style layout in a quiet, matte interface with dark and light themes. Chinese and English.
 
 ![Hosts](docs/home.png)
 ![Session](docs/session.png)
@@ -9,6 +9,8 @@ A clean SSH client for Windows: a Termius-style layout on a sky that changes fro
 | 编辑主机 / Host editor | 设置 / Settings |
 |---|---|
 | ![Editor](docs/editor.png) | ![Settings](docs/settings.png) |
+
+![Command palette](docs/palette.png)
 
 ## 功能 / Features
 
@@ -19,8 +21,9 @@ A clean SSH client for Windows: a Termius-style layout on a sky that changes fro
 - 命令片段：在终端里一键执行 / Snippets you run from inside the terminal
 - SFTP：浏览、上传、下载、重命名、删除、新建文件夹、拖放上传、在终端中打开
   SFTP browse, upload, download, rename, delete, mkdir, drag & drop, open in terminal
-- 背景：随时间 / 白天 / 黄昏 / 夜晚；以及语言、字号、字体、光标、选中即复制
-  Background: auto by time / day / dusk / night; plus language, font size and family, cursor, copy on select
+- 命令面板 Ctrl+K：主机、片段、操作一处搜索 / Command palette (Ctrl+K) for hosts, snippets and actions
+- 主题：跟随系统 / 深色 / 浅色；以及语言、字号、字体、光标、选中即复制
+  Theme: system / dark / light; plus language, font size and family, cursor, copy on select
 - 搜索框即连接：输入 user@host:port 回车 / The search box doubles as quick connect
 
 ## 下载 / Download
@@ -57,3 +60,6 @@ Pushing a `v*` tag builds on Windows via GitHub Actions and publishes a Release.
 技术栈 / Stack: Electron · ssh2 · xterm.js
 
 数据目录 / Data: `%APPDATA%\LightSSH`
+
+
+字体 / Fonts: Inter, Instrument Serif (SIL Open Font License 1.1).

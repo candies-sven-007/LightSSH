@@ -8,10 +8,9 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div id="sky"></div>
 
 <aside id="sidebar">
-  <div class="brand drag"><span class="logo">&gt;_</span><span>LightSSH</span></div>
+  <div class="brand drag"><span class="logo">&gt;_</span><span class="wordmark">LightSSH</span></div>
   <nav>
     <button class="nav on" data-nav="hosts"><i data-ic="server"></i><span data-i18n="hosts"></span><em id="navHostCount"></em></button>
     <button class="nav" data-nav="snippets"><i data-ic="zap"></i><span data-i18n="snippets"></span><em id="navSnipCount"></em></button>
@@ -30,7 +29,7 @@
     <!-- hosts -->
     <section id="view-hosts" class="view page active">
       <div class="page-head">
-        <div class="omni"><i data-ic="search"></i><input id="omni" spellcheck="false" data-i18n-ph="omniPh"><kbd>Enter</kbd></div>
+        <div class="omni"><i data-ic="search"></i><input id="omni" spellcheck="false" data-i18n-ph="omniPh"><kbd>Ctrl K</kbd></div>
         <button class="btn dark" id="btnNewHost"><i data-ic="plus"></i><span data-i18n="newHost"></span></button>
       </div>
       <div id="hostsContent" class="page-body"></div>
@@ -49,13 +48,8 @@
         <h1 data-i18n="settings"></h1>
         <div class="card">
           <div class="card-label"><i data-ic="sun"></i><span data-i18n="appearance"></span></div>
-          <div class="set-row"><span data-i18n="background"></span>
-            <div class="skies" id="setSky">
-              <button data-v="auto"><i class="sw auto"></i><span data-i18n="skyAuto"></span></button>
-              <button data-v="day"><i class="sw day"></i><span data-i18n="skyDay"></span></button>
-              <button data-v="dusk"><i class="sw dusk"></i><span data-i18n="skyDusk"></span></button>
-              <button data-v="night"><i class="sw night"></i><span data-i18n="skyNight"></span></button>
-            </div></div>
+          <div class="set-row"><span data-i18n="theme"></span>
+            <div class="seg" id="setTheme"><button data-v="system" data-i18n="themeSystem"></button><button data-v="dark" data-i18n="themeDark"></button><button data-v="light" data-i18n="themeLight"></button></div></div>
           <div class="set-row"><span data-i18n="language"></span>
             <div class="seg" id="setLang"><button data-v="zh">中文</button><button data-v="en">English</button></div></div>
         </div>
@@ -79,9 +73,6 @@
         <p class="foot-note">LightSSH <span id="ver"></span> · Electron · ssh2 · xterm.js</p>
       </div>
     </section>
-  </div>
-</main>
-
 <!-- right drawer: host editor -->
 <aside id="hostDrawer" class="drawer">
   <form id="hostForm" autocomplete="off">
@@ -143,6 +134,9 @@
   </form>
 </aside>
 
+  </div>
+</main>
+
 <!-- prompt / confirm -->
 <div id="prompt" class="modal hidden">
   <form id="promptForm" class="card dialog">
@@ -153,6 +147,14 @@
       <button type="submit" id="promptOk" class="btn dark" data-i18n="ok"></button>
     </div>
   </form>
+</div>
+
+<div id="palette" class="modal pal hidden">
+  <div class="pal-box">
+    <div class="pal-in"><i data-ic="search"></i><input id="palInput" spellcheck="false" data-i18n-ph="palettePh"></div>
+    <div id="palList"></div>
+    <div class="pal-foot"><span><kbd>↑</kbd><kbd>↓</kbd></span><span><kbd>Enter</kbd></span><span><kbd>Esc</kbd></span></div>
+  </div>
 </div>
 
 <div id="ctx" class="ctx hidden"></div>

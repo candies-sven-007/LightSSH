@@ -1,10 +1,10 @@
 /* LightSSH renderer — Termius-style layout, Hark-style surfaces */
-const VERSION = '1.3.0';
+const VERSION = '1.4.0';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-const DEFAULTS = { lang: '', fontSize: 14, fontFamily: 'Cascadia Mono', sky: 'auto', cursorStyle: 'bar', copyOnSelect: true };
+const DEFAULTS = { lang: '', fontSize: 14, fontFamily: 'Cascadia Mono', theme: 'system', cursorStyle: 'bar', copyOnSelect: true };
 let settings = { ...DEFAULTS };
 let hosts = [];
 let snippets = [];
@@ -35,42 +35,47 @@ function refreshTexts() {
   for (const tab of tabs.values()) { updateStatus(tab); if (tab.files) renderFiles(tab); }
 }
 
-// ---------- sky / theme ----------
-function skyNow() {
-  if (settings.sky !== 'auto') return settings.sky;
-  const h = new Date().getHours();
-  return h >= 7 && h < 17 ? 'day' : h >= 17 && h < 20 ? 'dusk' : 'night';
+// ---------- theme ----------
+const mq = matchMedia('(prefers-color-scheme: dark)');
+const isDark = () => settings.theme === 'dark' || (settings.theme === 'system' && mq.matches);
+const TERM_DARK = {
+  background: '#141415', foreground: '#d6d5cf', cursor: '#d6d5cf', cursorAccent: '#141415', selectionBackground: 'rgba(214,213,207,0.18)',
+  black: '#2a2928', red: '#d9695c', green: '#97a849', yellow: '#d6ad3a', blue: '#5c95c7', magenta: '#cf6f9f', cyan: '#4fb3a8', white: '#bdbbb3',
+  brightBlack: '#6f6e69', brightRed: '#ea8a7e', brightGreen: '#b0bf68', brightYellow: '#e5c35e', brightBlue: '#7fb0d9', brightMagenta: '#e091b8', brightCyan: '#74c7bd', brightWhite: '#f4f3ee',
+};
+const TERM_LIGHT = {
+  background: '#fbfbf9', foreground: '#1f1f21', cursor: '#1f1f21', cursorAccent: '#fbfbf9', selectionBackground: 'rgba(46,79,255,0.14)',
+  black: '#1f1f21', red: '#b13a2f', green: '#5f7a12', yellow: '#9a7406', blue: '#2a63a8', magenta: '#a3356f', cyan: '#237f77', white: '#8a8983',
+  brightBlack: '#6f6e69', brightRed: '#c9483c', brightGreen: '#6f8c17', brightYellow: '#ad8301', brightBlue: '#3471bd', brightMagenta: '#b8407e', brightCyan: '#2b938a', brightWhite: '#100f0f',
+};
+const termTheme = () => (isDark() ? TERM_DARK : TERM_LIGHT);
+function applyTheme() {
+  const dark = isDark();
+  document.body.classList.toggle('dark', dark);
+  api.setTheme?.(dark);
+  for (const tab of tabs.values()) tab.term.options.theme = termTheme();
 }
-let lastSky = '';
-function applySky() {
-  const sky = skyNow();
-  if (sky === lastSky) return;
-  lastSky = sky;
-  document.body.dataset.sky = sky;
-  document.body.classList.toggle('dark', sky !== 'day');
-  api.setTheme?.(sky !== 'day');
-}
-setInterval(applySky, 60 * 1000);
+mq.addEventListener('change', () => { if (settings.theme === 'system') applyTheme(); });
 
 // ---------- settings ----------
 const termFont = () => `"${settings.fontFamily}", "Cascadia Mono", Consolas, "Sarasa Mono SC", "Microsoft YaHei", monospace`;
 const saveSettings = () => api.settings.set(settings);
 function applySettings() {
-  applySky();
+  applyTheme();
   for (const tab of tabs.values()) {
     Object.assign(tab.term.options, { fontSize: settings.fontSize, fontFamily: termFont(), cursorStyle: settings.cursorStyle });
     fit(tab);
   }
 }
 function syncSettingsUI() {
-  $$('#setSky button').forEach((b) => b.classList.toggle('on', b.dataset.v === settings.sky));
+  $$('#setTheme button').forEach((b) => b.classList.toggle('on', b.dataset.v === settings.theme));
   $$('#setLang button').forEach((b) => b.classList.toggle('on', b.dataset.v === settings.lang));
   $$('#setCursor button').forEach((b) => b.classList.toggle('on', b.dataset.v === settings.cursorStyle));
   $('#setFont').value = settings.fontSize; $('#setFontV').textContent = settings.fontSize;
   $('#setFamily').value = settings.fontFamily;
   $('#setCopySel').checked = settings.copyOnSelect;
 }
-$('#setSky').onclick = (e) => { const v = e.target.closest('button')?.dataset.v; if (!v) return; settings.sky = v; lastSky = ''; saveSettings(); applySettings(); syncSettingsUI(); };
+$('#setTheme').onclick = (e) => { const v = e.target.dataset.v; if (!v) return; settings.theme = v; saveSettings(); applySettings(); syncSettingsUI(); };
 $('#setLang').onclick = (e) => { const v = e.target.dataset.v; if (!v) return; settings.lang = v; saveSettings(); syncSettingsUI(); refreshTexts(); };
 $('#setCursor').onclick = (e) => { const v = e.target.dataset.v; if (!v) return; settings.cursorStyle = v; saveSettings(); applySettings(); syncSettingsUI(); };
 $('#setFont').oninput = (e) => { settings.fontSize = +e.target.value; $('#setFontV').textContent = settings.fontSize; applySettings(); };
@@ -78,7 +83,7 @@ $('#setFont').onchange = saveSettings;
 $('#setFamily').onchange = (e) => { settings.fontFamily = e.target.value; applySettings(); saveSettings(); };
 $('#setCopySel').onchange = (e) => { settings.copyOnSelect = e.target.checked; saveSettings(); };
 function renderKeys() {
-  const rows = [['kFind', 'Ctrl F'], ['kCopy', 'Ctrl Shift C / V'], ['kTab', 'Ctrl Tab'], ['kClose', 'Ctrl Shift W'], ['kHome', 'Ctrl Shift T'], ['kFont', 'Ctrl + / − / 0'], ['kRe', 'Enter']];
+  const rows = [['kPalette', 'Ctrl K'], ['kFind', 'Ctrl F'], ['kCopy', 'Ctrl Shift C / V'], ['kTab', 'Ctrl Tab'], ['kClose', 'Ctrl Shift W'], ['kHome', 'Ctrl Shift T'], ['kFont', 'Ctrl + / − / 0'], ['kRe', 'Enter']];
   $('#keysList').innerHTML = rows.map(([k, v]) => `<div class="key-row"><span>${t(k)}</span><span>${v.split(' ').map((x) => x === '/' ? '<i>/</i>' : `<kbd>${x}</kbd>`).join('')}</span></div>`).join('');
 }
 
@@ -130,7 +135,7 @@ async function loadHosts() { hosts = await api.hosts.list(); renderHosts(); rend
 async function loadSnippets() { snippets = await api.snippets.list(); renderSnippets(); }
 
 const hue = (s) => { let h = 7; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
-const avatar = (h, cls = '') => `<div class="av ${cls}" style="--h:${hue(h.name + h.host)}">${esc((h.name || '?').trim().slice(0, 1).toUpperCase())}</div>`;
+const avatar = (h, cls = '') => `<div class="av ${cls}" style="--h:${hue(h.name + h.host)}">${icon('server')}</div>`;
 const groupBy = (list) => {
   const g = {}; list.forEach((h) => { (g[h.group || ''] ||= []).push(h); });
   return Object.keys(g).sort((a, b) => (a === '') - (b === '') || a.localeCompare(b)).map((k) => [k, g[k]]);
@@ -169,18 +174,18 @@ function renderHosts() {
   const el = $('#hostsContent');
   const live = liveHostIds();
   if (!hosts.length) {
-    el.innerHTML = `<div class="empty card">
+    el.innerHTML = `<div class="empty">
       <div class="empty-ic">${icon('server')}</div><h3>${t('emptyTip')}</h3><p>${t('emptySub')}</p>
       <button class="btn dark" data-home="new">${icon('plus')}<span>${t('newHost')}</span></button></div>`;
     return;
   }
   const card = (h) => `
-    <div class="hcard card" data-id="${h.id}">
-      <div class="hc-top">${avatar(h)}<span class="hc-meta">${esc(h.group || t('ungrouped'))} • ${h.authType === 'key' ? t('authKey') : t('authPwd')}</span>
-        ${live.has(h.id) ? '<span class="live-dot"></span>' : ''}
-        <button class="ib hc-edit" data-act="edit" title="${t('edit')}">${icon('edit')}</button></div>
-      <div class="hc-name">${esc(h.name)}</div>
-      <div class="hc-addr">${esc(hostAddr(h))}</div>
+    <div class="hcard" data-id="${h.id}">
+      ${avatar(h)}
+      <div class="hc-text"><div class="hc-name">${esc(h.name)}${live.has(h.id) ? '<span class="live-dot"></span>' : ''}</div>
+        <div class="hc-addr">${esc(hostAddr(h))}</div></div>
+      <span class="hc-auth" title="${h.authType === 'key' ? t('authKey') : t('authPwd')}">${icon(h.authType === 'key' ? 'key' : 'lock')}</span>
+      <button class="ib hc-edit" data-act="edit" title="${t('edit')}">${icon('edit')}</button>
     </div>`;
   const recent = !q && hosts.length > 6 ? hosts.filter((h) => h.lastUsed).sort((a, b) => b.lastUsed - a.lastUsed).slice(0, 3) : [];
   el.innerHTML = `
@@ -228,13 +233,13 @@ function renderSnippets() {
   const q = $('#snipSearch').value.trim().toLowerCase();
   const list = snippets.filter((s) => !q || (s.name + ' ' + s.command).toLowerCase().includes(q));
   $('#snipContent').innerHTML = !snippets.length
-    ? `<div class="empty card"><div class="empty-ic">${icon('zap')}</div><h3>${t('snippets')}</h3><p>${t('emptySnip')}</p>
+    ? `<div class="empty"><div class="empty-ic">${icon('zap')}</div><h3>${t('snippets')}</h3><p>${t('emptySnip')}</p>
         <button class="btn dark" data-snip="new">${icon('plus')}<span>${t('newSnippet')}</span></button></div>`
     : `<div class="sgrid">${list.map((s) => `
-      <div class="scard card" data-sid="${s.id}">
-        <div class="hc-top"><span class="sn-ic">${icon('zap')}</span><span class="hc-meta">${t('snipCount', s.command.split('\n').length)}</span>
+      <div class="scard" data-sid="${s.id}">
+        <div class="sc-head"><span class="sn-ic">${icon('zap')}</span><span class="hc-name">${esc(s.name)}</span>
+          <span class="hc-meta">${t('snipCount', s.command.split('\n').length)}</span>
           <button class="ib hc-edit" data-act="edit" title="${t('edit')}">${icon('edit')}</button></div>
-        <div class="hc-name">${esc(s.name)}</div>
         <pre class="sn-cmd">${esc(s.command)}</pre>
       </div>`).join('')}</div>`;
   renderLive();
@@ -396,7 +401,7 @@ function openSession(hostId, quick) {
       <div class="snip-pop hidden"></div>
       <div class="term"></div>
     </div>
-    <div class="sftp card hidden">
+    <div class="sftp hidden">
       <div class="sftp-head">
         <div class="card-label">${icon('folder')}<span>SFTP • ${esc(label)}</span></div>
         <div class="sftp-bar">
@@ -420,12 +425,8 @@ function openSession(hostId, quick) {
   const term = new Terminal({
     fontFamily: termFont(), fontSize: settings.fontSize, lineHeight: 1.2,
     cursorBlink: true, cursorStyle: settings.cursorStyle, cursorInactiveStyle: 'outline',
-    allowProposedApi: true, allowTransparency: true, scrollback: 10000, smoothScrollDuration: 80,
-    theme: {
-      background: '#00000000', foreground: '#e9eaf0', cursor: '#a6b4fa', cursorAccent: '#1e1f24', selectionBackground: 'rgba(166,180,250,0.28)',
-      black: '#2a2b34', red: '#ff8a80', green: '#a5e3a0', yellow: '#f3d58f', blue: '#8fa8ff', magenta: '#d3a6f5', cyan: '#8ad8e8', white: '#e9eaf0',
-      brightBlack: '#7b8499', brightRed: '#ffa79f', brightGreen: '#c0efbb', brightYellow: '#f8e2ac', brightBlue: '#b1c0ff', brightMagenta: '#e2c2fa', brightCyan: '#ade6f1', brightWhite: '#ffffff',
-    },
+    allowProposedApi: true, scrollback: 10000, smoothScrollDuration: 80,
+    theme: termTheme(),
   });
   const fitAddon = new FitAddon.FitAddon();
   const search = new SearchAddon.SearchAddon();
@@ -460,7 +461,7 @@ function openSession(hostId, quick) {
     if (e.ctrlKey && e.shiftKey && e.code === 'KeyC') { const s = term.getSelection(); if (s) api.clip.write(s); return false; }
     if (e.ctrlKey && e.shiftKey && e.code === 'KeyV') { paste(); return false; }
     if (e.ctrlKey && !e.shiftKey && e.code === 'KeyF') { openFind(tab); return false; }
-    if (e.ctrlKey && (e.code === 'Tab' || e.code === 'Equal' || e.code === 'Minus' || e.code === 'Digit0')) return false;
+    if (e.ctrlKey && (e.code === 'KeyK' || e.code === 'Tab' || e.code === 'Equal' || e.code === 'Minus' || e.code === 'Digit0')) return false;
     if (e.ctrlKey && e.shiftKey && (e.code === 'KeyW' || e.code === 'KeyT')) return false;
     return true;
   });
@@ -549,7 +550,7 @@ api.ssh.onClosed((sid) => {
 });
 
 // ---------- find ----------
-const FIND_OPTS = { decorations: { matchOverviewRuler: '#a6b4fa', activeMatchColorOverviewRuler: '#ffffff', matchBackground: '#3b4270', activeMatchBackground: '#5a66b0' } };
+const FIND_OPTS = { decorations: { matchOverviewRuler: '#8f9bff', activeMatchColorOverviewRuler: '#ffb547', matchBackground: '#5a5f8a', activeMatchBackground: '#b07a1e' } };
 function openFind(tab) {
   const bar = $('.findbar', tab.view); bar.classList.remove('hidden');
   const inp = $('input', bar); inp.focus(); inp.select();
@@ -679,8 +680,58 @@ api.sftp.onProgress((sid, name, done, total) => {
   $('span', el).textContent = `${name} · ${pct}%`;
 });
 
+// ---------- command palette ----------
+let palItems = [], palSel = 0;
+function openPalette() {
+  hideMenu(); closeDrawers();
+  $('#palette').classList.remove('hidden');
+  const inp = $('#palInput'); inp.value = ''; renderPalette(); inp.focus();
+}
+const closePalette = () => $('#palette').classList.add('hidden');
+function renderPalette() {
+  const q = $('#palInput').value.trim().toLowerCase();
+  const m = q.match(/^(?:ssh\s+)?([^@\s]+)@([^:\s]+)(?::(\d+))?$/);
+  const items = [];
+  if (m) items.push({ g: 'grpActions', icon: 'terminal', label: t('connectTo', q), run: () => openSession(null, { username: m[1], host: m[2], port: Number(m[3]) || 22 }) });
+  const hit = (s) => !q || s.toLowerCase().includes(q);
+  hosts.filter((h) => hit([h.name, h.host, h.username, h.group].join(' '))).slice(0, 8)
+    .forEach((h) => items.push({ g: 'grpHosts', icon: 'server', label: h.name, sub: hostAddr(h), run: () => openSession(h.id) }));
+  const tab = tabs.get(activeTab);
+  snippets.filter((s) => hit(s.name + ' ' + s.command)).slice(0, 6)
+    .forEach((s) => items.push({ g: 'grpSnippets', icon: 'zap', label: s.name, sub: s.command.split('\n')[0], run: () => tab ? runSnippet(tab, s) : openSnipEditor(s) }));
+  [
+    { icon: 'plus', label: t('newHost'), run: () => { setNav('hosts'); openHostEditor(null); } },
+    { icon: 'plus', label: t('newSnippet'), run: () => { setNav('snippets'); openSnipEditor(null); } },
+    { icon: 'sun', label: t('cmdToggleTheme'), run: () => { settings.theme = isDark() ? 'light' : 'dark'; saveSettings(); applySettings(); syncSettingsUI(); } },
+    { icon: 'sliders', label: t('settings'), run: () => setNav('settings') },
+  ].filter((a) => hit(a.label)).forEach((a) => items.push({ g: 'grpActions', ...a }));
+  palItems = items; palSel = 0;
+  let last = '';
+  $('#palList').innerHTML = items.map((it, i) => {
+    const head = it.g !== last ? `<div class="pal-g">${t(it.g)}</div>` : ''; last = it.g;
+    return `${head}<button class="pal-item" data-i="${i}">${icon(it.icon)}<span class="pl">${esc(it.label)}</span>${it.sub ? `<span class="ps mono">${esc(it.sub)}</span>` : ''}</button>`;
+  }).join('') || `<div class="pal-none">${t('noResults')}</div>`;
+  markPal();
+}
+function markPal() {
+  $$('.pal-item').forEach((b) => b.classList.toggle('on', +b.dataset.i === palSel));
+  $('.pal-item.on')?.scrollIntoView({ block: 'nearest' });
+}
+function runPal(i) { const it = palItems[i]; if (!it) return; closePalette(); it.run(); }
+$('#palInput').addEventListener('input', renderPalette);
+$('#palInput').addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowDown') { e.preventDefault(); palSel = Math.min(palItems.length - 1, palSel + 1); markPal(); }
+  if (e.key === 'ArrowUp') { e.preventDefault(); palSel = Math.max(0, palSel - 1); markPal(); }
+  if (e.key === 'Enter') { e.preventDefault(); runPal(palSel); }
+});
+$('#palList').addEventListener('click', (e) => { const b = e.target.closest('.pal-item'); if (b) runPal(+b.dataset.i); });
+$('#palList').addEventListener('mousemove', (e) => { const b = e.target.closest('.pal-item'); if (b && +b.dataset.i !== palSel) { palSel = +b.dataset.i; markPal(); } });
+$('#palette').addEventListener('mousedown', (e) => { if (e.target.id === 'palette') closePalette(); });
+
 // ---------- keyboard ----------
 document.addEventListener('keydown', (e) => {
+  if (e.ctrlKey && !e.shiftKey && e.code === 'KeyK') { e.preventDefault(); return $('#palette').classList.contains('hidden') ? openPalette() : closePalette(); }
+  if (e.key === 'Escape' && !$('#palette').classList.contains('hidden')) return closePalette();
   if (e.key === 'Escape') {
     hideMenu();
     if ($('#prompt')._cancel) $('#prompt')._cancel(); else closeDrawers();
@@ -703,7 +754,7 @@ document.addEventListener('keydown', (e) => {
 // ---------- init ----------
 (async function init() {
   settings = { ...DEFAULTS, ...(await api.settings.get()) };
-  if (!['auto', 'day', 'dusk', 'night'].includes(settings.sky)) settings.sky = 'auto';
+  if (!['system', 'dark', 'light'].includes(settings.theme)) settings.theme = 'system';
   if (!settings.lang) settings.lang = navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en';
   applySettings();
   await Promise.all([loadHosts(), loadSnippets()]);
