@@ -1,13 +1,17 @@
 /* LightSSH renderer — Termius-style layout, Hark-style surfaces */
-const VERSION = '1.4.0';
+const VERSION = '1.5.0';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-const DEFAULTS = { lang: '', fontSize: 14, fontFamily: 'Cascadia Mono', theme: 'system', cursorStyle: 'bar', copyOnSelect: true };
+const DEFAULTS = { lang: '', fontSize: 14, fontFamily: 'Cascadia Mono', theme: 'system', termTheme: 'dark', cursorStyle: 'bar', copyOnSelect: true };
 let settings = { ...DEFAULTS };
 let hosts = [];
 let snippets = [];
+let forwards = [];
+const fwdState = new Map();
+const groups = new Map(); // gid -> [sid]
+let gseq = 0;
 let nav = 'hosts';
 const tabs = new Map();
 let activeTab = 'home';
@@ -39,19 +43,20 @@ function refreshTexts() {
 const mq = matchMedia('(prefers-color-scheme: dark)');
 const isDark = () => settings.theme === 'dark' || (settings.theme === 'system' && mq.matches);
 const TERM_DARK = {
-  background: '#141415', foreground: '#d6d5cf', cursor: '#d6d5cf', cursorAccent: '#141415', selectionBackground: 'rgba(214,213,207,0.18)',
+  background: '#161617', foreground: '#d6d5cf', cursor: '#d6d5cf', cursorAccent: '#161617', selectionBackground: 'rgba(214,213,207,0.18)',
   black: '#2a2928', red: '#d9695c', green: '#97a849', yellow: '#d6ad3a', blue: '#5c95c7', magenta: '#cf6f9f', cyan: '#4fb3a8', white: '#bdbbb3',
   brightBlack: '#6f6e69', brightRed: '#ea8a7e', brightGreen: '#b0bf68', brightYellow: '#e5c35e', brightBlue: '#7fb0d9', brightMagenta: '#e091b8', brightCyan: '#74c7bd', brightWhite: '#f4f3ee',
 };
 const TERM_LIGHT = {
-  background: '#fbfbf9', foreground: '#1f1f21', cursor: '#1f1f21', cursorAccent: '#fbfbf9', selectionBackground: 'rgba(46,79,255,0.14)',
+  background: '#f7f6f3', foreground: '#1f1f21', cursor: '#1f1f21', cursorAccent: '#f7f6f3', selectionBackground: 'rgba(46,79,255,0.14)',
   black: '#1f1f21', red: '#b13a2f', green: '#5f7a12', yellow: '#9a7406', blue: '#2a63a8', magenta: '#a3356f', cyan: '#237f77', white: '#8a8983',
   brightBlack: '#6f6e69', brightRed: '#c9483c', brightGreen: '#6f8c17', brightYellow: '#ad8301', brightBlue: '#3471bd', brightMagenta: '#b8407e', brightCyan: '#2b938a', brightWhite: '#100f0f',
 };
-const termTheme = () => (isDark() ? TERM_DARK : TERM_LIGHT);
+const termTheme = () => (settings.termTheme === 'match' && !isDark() ? TERM_LIGHT : TERM_DARK);
 function applyTheme() {
   const dark = isDark();
   document.body.classList.toggle('dark', dark);
+  document.body.classList.toggle('term-light', termTheme() === TERM_LIGHT);
   api.setTheme?.(dark);
   for (const tab of tabs.values()) tab.term.options.theme = termTheme();
 }
@@ -70,6 +75,7 @@ function applySettings() {
 function syncSettingsUI() {
   $$('#setTheme button').forEach((b) => b.classList.toggle('on', b.dataset.v === settings.theme));
   $$('#setLang button').forEach((b) => b.classList.toggle('on', b.dataset.v === settings.lang));
+  $$('#setTermTheme button').forEach((b) => b.classList.toggle('on', b.dataset.v === settings.termTheme));
   $$('#setCursor button').forEach((b) => b.classList.toggle('on', b.dataset.v === settings.cursorStyle));
   $('#setFont').value = settings.fontSize; $('#setFontV').textContent = settings.fontSize;
   $('#setFamily').value = settings.fontFamily;
@@ -77,13 +83,14 @@ function syncSettingsUI() {
 }
 $('#setTheme').onclick = (e) => { const v = e.target.dataset.v; if (!v) return; settings.theme = v; saveSettings(); applySettings(); syncSettingsUI(); };
 $('#setLang').onclick = (e) => { const v = e.target.dataset.v; if (!v) return; settings.lang = v; saveSettings(); syncSettingsUI(); refreshTexts(); };
+$('#setTermTheme').onclick = (e) => { const v = e.target.dataset.v; if (!v) return; settings.termTheme = v; saveSettings(); applySettings(); syncSettingsUI(); };
 $('#setCursor').onclick = (e) => { const v = e.target.dataset.v; if (!v) return; settings.cursorStyle = v; saveSettings(); applySettings(); syncSettingsUI(); };
 $('#setFont').oninput = (e) => { settings.fontSize = +e.target.value; $('#setFontV').textContent = settings.fontSize; applySettings(); };
 $('#setFont').onchange = saveSettings;
 $('#setFamily').onchange = (e) => { settings.fontFamily = e.target.value; applySettings(); saveSettings(); };
 $('#setCopySel').onchange = (e) => { settings.copyOnSelect = e.target.checked; saveSettings(); };
 function renderKeys() {
-  const rows = [['kPalette', 'Ctrl K'], ['kFind', 'Ctrl F'], ['kCopy', 'Ctrl Shift C / V'], ['kTab', 'Ctrl Tab'], ['kClose', 'Ctrl Shift W'], ['kHome', 'Ctrl Shift T'], ['kFont', 'Ctrl + / − / 0'], ['kRe', 'Enter']];
+  const rows = [['kPalette', 'Ctrl K'], ['kFind', 'Ctrl F'], ['kCopy', 'Ctrl Shift C / V'], ['kTab', 'Ctrl Tab'], ['kSplit', 'Ctrl Shift D'], ['kClose', 'Ctrl Shift W'], ['kHome', 'Ctrl Shift T'], ['kFont', 'Ctrl + / − / 0'], ['kRe', 'Enter']];
   $('#keysList').innerHTML = rows.map(([k, v]) => `<div class="key-row"><span>${t(k)}</span><span>${v.split(' ').map((x) => x === '/' ? '<i>/</i>' : `<kbd>${x}</kbd>`).join('')}</span></div>`).join('');
 }
 
@@ -131,8 +138,9 @@ document.addEventListener('mousedown', (e) => { if (!e.target.closest('#ctx')) h
 window.addEventListener('blur', hideMenu);
 
 // ---------- data ----------
-async function loadHosts() { hosts = await api.hosts.list(); renderHosts(); renderLive(); }
+async function loadHosts() { hosts = await api.hosts.list(); renderHosts(); renderLive(); if (forwards.length) renderForwards(); }
 async function loadSnippets() { snippets = await api.snippets.list(); renderSnippets(); }
+async function loadForwards() { forwards = await api.fwd.list(); forwards.forEach((f) => { if (!fwdState.has(f.id) || f.state === 'running') fwdState.set(f.id, f.state); }); renderForwards(); }
 
 const hue = (s) => { let h = 7; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
 const avatar = (h, cls = '') => `<div class="av ${cls}" style="--h:${hue(h.name + h.host)}">${icon('server')}</div>`;
@@ -141,6 +149,7 @@ const groupBy = (list) => {
   return Object.keys(g).sort((a, b) => (a === '') - (b === '') || a.localeCompare(b)).map((k) => [k, g[k]]);
 };
 const liveHostIds = () => new Set([...tabs.values()].filter((x) => x.state === 'connected').map((x) => x.hostId));
+const jumpName = (h) => (h.jumpHostId ? hosts.find((x) => x.id === h.jumpHostId)?.name || '' : '');
 const hostAddr = (h) => `${h.username}@${h.host}${h.port != 22 ? ':' + h.port : ''}`;
 
 // ---------- navigation ----------
@@ -149,6 +158,7 @@ function setNav(n) {
   $$('#sidebar .nav').forEach((b) => b.classList.toggle('on', b.dataset.nav === n));
   $$('#views .page').forEach((v) => v.classList.toggle('active', v.id === 'view-' + n && activeTab === 'home'));
   $('#homeTabLabel').textContent = t(n);
+  $('#homeTabIcon').innerHTML = icon({ hosts: 'server', snippets: 'zap', forwards: 'forward', settings: 'sliders' }[n]);
   if (n === 'settings') syncSettingsUI();
   switchTab('home');
 }
@@ -158,12 +168,15 @@ $$('#sidebar .nav').forEach((b) => b.onclick = () => setNav(b.dataset.nav));
 function renderLive() {
   const list = [...tabs.values()];
   $('#liveLabel').classList.toggle('hidden', !list.length);
+  const vis = activeTab !== 'home' ? paneList(activeTab) : [];
   $('#liveList').innerHTML = list.map((tab) => `
-    <button class="live ${tab.sid === activeTab ? 'on' : ''}" data-sid="${tab.sid}">
+    <button class="live ${tab.sid === activeTab ? 'on' : vis.includes(tab.sid) ? 'vis' : ''}" data-sid="${tab.sid}">
       <span class="st" data-state="${tab.state}"></span><span class="tl">${esc(tab.label)}</span>
     </button>`).join('');
   $('#navHostCount').textContent = hosts.length || '';
   $('#navSnipCount').textContent = snippets.length || '';
+  const nRun = [...fwdState.values()].filter((s) => s === 'running').length;
+  $('#navFwdCount').innerHTML = nRun ? `<span class="run-dot"></span>${nRun}` : (forwards.length || '');
 }
 $('#liveList').addEventListener('click', (e) => { const b = e.target.closest('.live'); if (b) switchTab(b.dataset.sid); });
 
@@ -173,6 +186,7 @@ function renderHosts() {
   const list = hosts.filter((h) => !q || [h.name, h.host, h.username, h.group].join(' ').toLowerCase().includes(q));
   const el = $('#hostsContent');
   const live = liveHostIds();
+  $('#hostsSub').textContent = t('hostsSub', hosts.length) + (live.size ? ' · ' + t('hostsLive', live.size) : '');
   if (!hosts.length) {
     el.innerHTML = `<div class="empty">
       <div class="empty-ic">${icon('server')}</div><h3>${t('emptyTip')}</h3><p>${t('emptySub')}</p>
@@ -183,8 +197,8 @@ function renderHosts() {
     <div class="hcard" data-id="${h.id}">
       ${avatar(h)}
       <div class="hc-text"><div class="hc-name">${esc(h.name)}${live.has(h.id) ? '<span class="live-dot"></span>' : ''}</div>
-        <div class="hc-addr">${esc(hostAddr(h))}</div></div>
-      <span class="hc-auth" title="${h.authType === 'key' ? t('authKey') : t('authPwd')}">${icon(h.authType === 'key' ? 'key' : 'lock')}</span>
+        <div class="hc-addr">${esc(hostAddr(h))}</div>
+        <div class="chips"><span class="chip">${icon(h.authType === 'key' ? 'key' : 'lock')}${h.authType === 'key' ? t('authKey') : t('authPwd')}</span>${jumpName(h) ? `<span class="chip">${icon('route')}${esc(jumpName(h))}</span>` : ''}</div></div>
       <button class="ib hc-edit" data-act="edit" title="${t('edit')}">${icon('edit')}</button>
     </div>`;
   const recent = !q && hosts.length > 6 ? hosts.filter((h) => h.lastUsed).sort((a, b) => b.lastUsed - a.lastUsed).slice(0, 3) : [];
@@ -289,6 +303,9 @@ function openHostEditor(h, duplicate = false) {
   fe.keyPath.value = h?.keyPath || '';
   fe.password.placeholder = h?.hasPassword ? t('fPwdKeep') : t('fPwdPh');
   fe.passphrase.placeholder = h?.hasPassphrase ? t('fPwdKeep') : '';
+  $('#jumpSelect').innerHTML = `<option value="">${t('noJump')}</option>` + hosts.filter((x) => !h || duplicate || x.id !== h.id)
+    .map((x) => `<option value="${x.id}">${esc(x.name)} · ${esc(hostAddr(x))}</option>`).join('');
+  fe.jumpHostId.value = h?.jumpHostId || '';
   $('#groupList').innerHTML = [...new Set(hosts.map((x) => x.group).filter(Boolean))].map((g) => `<option value="${esc(g)}">`).join('');
   $('#btnDel').classList.toggle('hidden', !h || duplicate);
   $('#btnDup').classList.toggle('hidden', !h || duplicate);
@@ -332,15 +349,69 @@ sform.addEventListener('submit', async (e) => {
 });
 
 // ---------- tabs ----------
+const paneList = (sid) => { const tb = tabs.get(sid); return tb?.gid ? groups.get(tb.gid) : [sid]; };
+function layoutPanes(list) {
+  const n = list.length;
+  const R = n === 2 ? [[0, 0, 50, 100], [50, 0, 50, 100]]
+    : n === 3 ? [[0, 0, 50, 100], [50, 0, 50, 50], [50, 50, 50, 50]]
+    : n === 4 ? [[0, 0, 50, 50], [50, 0, 50, 50], [0, 50, 50, 50], [50, 50, 50, 50]] : null;
+  list.forEach((sid, i) => {
+    const v = tabs.get(sid).view;
+    v.classList.toggle('pane', !!R);
+    if (R) { const [x, y, w, hh] = R[i]; Object.assign(v.style, { left: x + '%', top: y + '%', width: w + '%', height: hh + '%' }); }
+    else v.removeAttribute('style');
+  });
+}
+function markFocus() {
+  const list = activeTab === 'home' ? [] : paneList(activeTab);
+  $$('#tabbar .tab').forEach((el) => {
+    el.classList.toggle('active', el.dataset.tab === activeTab);
+    el.classList.toggle('shown', el.dataset.tab !== activeTab && list.includes(el.dataset.tab));
+  });
+  for (const tb of tabs.values()) tb.view.classList.toggle('focused', list.length > 1 && tb.sid === activeTab);
+  renderLive();
+}
 function switchTab(id) {
   activeTab = id;
-  $$('#tabbar .tab').forEach((el) => el.classList.toggle('active', el.dataset.tab === id));
-  $$('#views .view').forEach((el) => el.classList.toggle('active', id === 'home' ? el.id === 'view-' + nav : el.id === 'view-' + id));
+  const list = id === 'home' ? [] : paneList(id);
+  $$('#views .view').forEach((el) => el.classList.toggle('active', id === 'home' ? el.id === 'view-' + nav : list.some((s) => el.id === 'view-' + s)));
   $$('#sidebar .nav').forEach((b) => b.classList.toggle('on', id === 'home' && b.dataset.nav === nav));
-  renderLive();
+  if (list.length) layoutPanes(list);
+  markFocus();
   const tab = tabs.get(id);
-  if (tab) { closeDrawers(); setTimeout(() => { fit(tab); tab.term.focus(); }, 0); }
+  if (tab) { closeDrawers(); setTimeout(() => { list.forEach((s) => fit(tabs.get(s))); tab.term.focus(); }, 0); }
   else if (nav === 'hosts') setTimeout(() => $('#omni').focus(), 0);
+}
+function focusPane(sid) { if (activeTab === sid) return; activeTab = sid; markFocus(); }
+function splitWith(a, b) {
+  const A = tabs.get(a), B = tabs.get(b);
+  if (!A || !B || a === b) return;
+  if (B.gid) detach(b, false);
+  let gid = A.gid;
+  if (!gid) { gid = 'g' + (++gseq); A.gid = gid; groups.set(gid, [a]); }
+  const g = groups.get(gid);
+  if (g.length >= 4) return toast(t('maxPanes'), true);
+  g.push(b); B.gid = gid;
+  tabs.get(g[g.length - 2]).tabEl.after(B.tabEl);
+  g.forEach((s) => tabs.get(s).tabEl.classList.add('grouped'));
+  switchTab(b);
+}
+function detach(sid, show = true) {
+  const tb = tabs.get(sid); if (!tb?.gid) return;
+  const g = groups.get(tb.gid);
+  g.splice(g.indexOf(sid), 1);
+  tb.gid = null; tb.tabEl.classList.remove('grouped'); tb.view.classList.remove('pane', 'focused'); tb.view.removeAttribute('style');
+  if (g.length === 1) { const o = tabs.get(g[0]); o.gid = null; o.tabEl.classList.remove('grouped'); o.view.classList.remove('pane', 'focused'); o.view.removeAttribute('style'); groups.delete([...groups].find(([, v]) => v === g)[0]); }
+  if (show) switchTab(sid);
+}
+function splitMenu(tab, x, y) {
+  const mine = paneList(tab.sid);
+  const others = [...tabs.values()].filter((o) => !mine.includes(o.sid));
+  showMenu(x, y, [
+    { icon: 'split', label: t('splitNew'), hint: 'Ctrl+Shift+D', disabled: mine.length >= 4, run: () => openSession(tab.hostId, tab.quick, tab.sid) },
+    ...others.map((o) => ({ icon: 'terminal', label: t('splitWith', o.label), disabled: mine.length >= 4, run: () => splitWith(tab.sid, o.sid) })),
+    ...(tab.gid ? ['-', { icon: 'unsplit', label: t('unsplit'), run: () => detach(tab.sid) }] : []),
+  ]);
 }
 $('#tabbar').addEventListener('click', (e) => {
   const el = e.target.closest('.tab'); if (!el) return;
@@ -355,23 +426,27 @@ $('#tabbar').addEventListener('contextmenu', (e) => {
   showMenu(e.clientX, e.clientY, [
     { icon: 'refresh', label: t('reconnect'), disabled: tab.state === 'connecting', run: () => reconnect(tab) },
     { icon: 'copy', label: t('duplicate'), run: () => openSession(tab.hostId, tab.quick) },
+    { icon: 'split', label: t('splitNew'), hint: 'Ctrl+Shift+D', run: () => openSession(tab.hostId, tab.quick, tab.sid) },
+    ...(tab.gid ? [{ icon: 'unsplit', label: t('unsplit'), run: () => detach(tab.sid) }] : []),
     '-',
     { icon: 'x', label: t('close'), hint: 'Ctrl+Shift+W', run: () => closeTab(tab.sid) },
   ]);
 });
 function closeTab(sid) {
   const tab = tabs.get(sid); if (!tab) return;
+  const mates = paneList(sid).filter((s) => s !== sid);
+  if (tab.gid) detach(sid, false);
   api.ssh.close(sid);
   tab.term.dispose(); tab.ro.disconnect();
   tab.tabEl.remove(); tab.view.remove();
   tabs.delete(sid);
-  if (activeTab === sid) { const last = [...tabs.keys()].pop(); switchTab(last || 'home'); }
+  if (activeTab === sid || mates.includes(activeTab)) switchTab(mates[0] || [...tabs.keys()].pop() || 'home');
   renderLive(); renderHosts();
 }
 
 // ---------- sessions ----------
 let seq = 0;
-function openSession(hostId, quick) {
+function openSession(hostId, quick, splitFrom) {
   const h = hostId ? hosts.find((x) => x.id === hostId) : null;
   const label = h ? h.name : `${quick.username}@${quick.host}`;
   const addr = h ? `${h.username}@${h.host}:${h.port}` : `${quick.username}@${quick.host}:${quick.port}`;
@@ -393,13 +468,15 @@ function openSession(hostId, quick) {
         <button class="ib" data-act="find" title="${t('find')} (Ctrl+F)">${icon('search')}</button>
         <button class="ib" data-act="reconnect" title="${t('reconnect')}">${icon('refresh')}</button>
         <button class="ib" data-act="sftp" title="${t('sftp')}">${icon('folder')}</button>
+        <button class="ib" data-act="split" title="${t('split')}">${icon('split')}</button>
+        <button class="ib pane-x" data-act="close" title="${t('close')}">${icon('x')}</button>
       </div>
       <div class="findbar hidden">
         ${icon('search')}<input spellcheck="false"><span class="fcount"></span>
         <button class="ib" data-f="prev">${icon('chevUp')}</button><button class="ib" data-f="next">${icon('chevDown')}</button><button class="ib" data-f="close">${icon('x')}</button>
       </div>
       <div class="snip-pop hidden"></div>
-      <div class="term"></div>
+      <div class="term-shell"><div class="term"></div></div>
     </div>
     <div class="sftp hidden">
       <div class="sftp-head">
@@ -462,7 +539,7 @@ function openSession(hostId, quick) {
     if (e.ctrlKey && e.shiftKey && e.code === 'KeyV') { paste(); return false; }
     if (e.ctrlKey && !e.shiftKey && e.code === 'KeyF') { openFind(tab); return false; }
     if (e.ctrlKey && (e.code === 'KeyK' || e.code === 'Tab' || e.code === 'Equal' || e.code === 'Minus' || e.code === 'Digit0')) return false;
-    if (e.ctrlKey && e.shiftKey && (e.code === 'KeyW' || e.code === 'KeyT')) return false;
+    if (e.ctrlKey && e.shiftKey && (e.code === 'KeyW' || e.code === 'KeyT' || e.code === 'KeyD')) return false;
     return true;
   });
   tab.ro = new ResizeObserver(() => fit(tab));
@@ -474,14 +551,18 @@ function openSession(hostId, quick) {
     if (act === 'sftp') toggleSftp(tab);
     if (act === 'find') openFind(tab);
     if (act === 'snips') toggleSnipPop(tab);
+    if (act === 'split') { const rc = btn.getBoundingClientRect(); splitMenu(tab, rc.left, rc.bottom + 4); }
+    if (act === 'close') closeTab(tab.sid);
     const sp = e.target.closest('.sp-item');
     if (sp) { $('.snip-pop', view).classList.add('hidden'); runSnippet(tab, snippets.find((x) => x.id === sp.dataset.sid), !e.shiftKey); }
     if (!e.target.closest('.snip-pop') && act !== 'snips') $('.snip-pop', view).classList.add('hidden');
   });
+  view.addEventListener('mousedown', () => focusPane(sid), true);
+  term.textarea?.addEventListener('focus', () => focusPane(sid));
   bindFind(tab);
   bindSftp(tab);
 
-  switchTab(sid);
+  if (splitFrom && tabs.has(splitFrom) && paneList(splitFrom).length < 4) splitWith(splitFrom, sid); else switchTab(sid);
   connect(tab);
 }
 
@@ -680,6 +761,109 @@ api.sftp.onProgress((sid, name, done, total) => {
   $('span', el).textContent = `${name} · ${pct}%`;
 });
 
+// ---------- port forwarding ----------
+const fwdTypeIc = { local: 'arrowRight', remote: 'arrowLeft', dynamic: 'globe' };
+function fwdDesc(f) {
+  const bind = `${f.bindHost}:${f.bindPort}`;
+  if (f.type === 'dynamic') return `${t('socks')} ${bind}`;
+  return `${bind} → ${f.destHost}:${f.destPort}`;
+}
+function renderForwards() {
+  const el = $('#fwdContent');
+  if (!forwards.length) {
+    el.innerHTML = `<div class="empty"><div class="empty-ic">${icon('forward')}</div><h3>${t('fwdEmpty')}</h3><p>${t('fwdEmptySub')}</p>
+      <button class="btn dark" data-fwd="new">${icon('plus')}<span>${t('newFwd')}</span></button></div>`;
+  } else {
+    el.innerHTML = `<div class="flist">${forwards.map((f) => {
+      const h = hosts.find((x) => x.id === f.hostId);
+      const st = fwdState.get(f.id) || 'stopped';
+      return `<div class="fcard" data-fid="${f.id}" data-state="${st}">
+        <div class="ftype t-${f.type}">${icon(fwdTypeIc[f.type])}</div>
+        <div class="hc-text"><div class="hc-name">${esc(f.name || fwdDesc(f))}</div>
+          <div class="hc-addr">${esc(fwdDesc(f))}</div>
+          <div class="chips"><span class="chip">${t({ local: 'tLocal', remote: 'tRemote', dynamic: 'tDynamic' }[f.type])}</span>${h ? `<span class="chip">${icon('server')}${esc(t('via', h.name))}</span>` : ''}</div></div>
+        <span class="fstate">${t({ running: 'fwdRunning', starting: 'fwdStarting', stopped: 'fwdStopped', error: 'fwdStopped' }[st])}</span>
+        <label class="switch" data-act="toggle"><input type="checkbox" ${st === 'running' || st === 'starting' ? 'checked' : ''} ${st === 'starting' ? 'disabled' : ''}><i></i></label>
+        <button class="ib hc-edit" data-act="edit" title="${t('edit')}">${icon('edit')}</button>
+      </div>`;
+    }).join('')}</div>`;
+  }
+  renderLive();
+}
+async function toggleFwd(f) {
+  const st = fwdState.get(f.id);
+  if (st === 'running') { await api.fwd.stop(f.id); return; }
+  fwdState.set(f.id, 'starting'); renderForwards();
+  try { await api.fwd.start(f.id, settings.lang); fwdState.set(f.id, 'running'); toast(t('fwdStarted', fwdDesc(f))); }
+  catch (err) { fwdState.set(f.id, 'stopped'); toast(t('failed', cleanErr(err)), true); }
+  renderForwards();
+}
+api.fwd.onStatus((id, s, m) => {
+  if (s === 'error') { toast(t('failed', m), true); return; }
+  fwdState.set(id, s); renderForwards();
+});
+$('#btnNewFwd').onclick = () => openFwdEditor(null);
+$('#fwdContent').addEventListener('click', (e) => {
+  if (e.target.closest('[data-fwd="new"]')) return openFwdEditor(null);
+  const c = e.target.closest('.fcard'); if (!c) return;
+  const f = forwards.find((x) => x.id === c.dataset.fid);
+  if (e.target.closest('[data-act="toggle"]')) { e.preventDefault(); if (e.target.tagName === 'I' || e.target.tagName === 'INPUT') toggleFwd(f); return; }
+  openFwdEditor(f);
+});
+$('#fwdContent').addEventListener('contextmenu', (e) => {
+  const c = e.target.closest('.fcard'); if (!c) return;
+  e.preventDefault();
+  const f = forwards.find((x) => x.id === c.dataset.fid);
+  const on = fwdState.get(f.id) === 'running';
+  showMenu(e.clientX, e.clientY, [
+    { icon: on ? 'x' : 'play', label: on ? t('fStop') : t('fStart'), run: () => toggleFwd(f) },
+    { icon: 'edit', label: t('edit'), run: () => openFwdEditor(f) },
+    '-',
+    { icon: 'trash', label: t('delete'), danger: true, run: () => deleteFwd(f) },
+  ]);
+});
+async function deleteFwd(f) {
+  if (await confirmBox(t('confirmDelFwd', f.name || fwdDesc(f)))) { await api.fwd.remove(f.id); fwdState.delete(f.id); closeDrawers(); loadForwards(); }
+}
+const fform = $('#fwdForm'), ff = fform.elements;
+let startAfterSave = false;
+function setFwdTypeUI() {
+  const ty = ff.type.value;
+  $('#fwdHelp').textContent = t({ local: 'helpLocal', remote: 'helpRemote', dynamic: 'helpDynamic' }[ty]);
+  $('.dest', fform).classList.toggle('hidden', ty === 'dynamic');
+  ff.destPort.required = ty !== 'dynamic';
+  $('#bindLabel').textContent = t(ty === 'remote' ? 'bindRemote' : 'bindLocal');
+  $('#destLabel').textContent = t(ty === 'remote' ? 'destLocal' : 'destRemote');
+  ff.bindPort.placeholder = ty === 'dynamic' ? '1080' : '8080';
+}
+function openFwdEditor(f) {
+  if (!hosts.length) return toast(t('fwdNoHost'), true);
+  fform.reset();
+  $('#fwdTitle').textContent = f ? t('editFwd') : t('addFwd');
+  $('#fwdHostSelect').innerHTML = hosts.map((x) => `<option value="${x.id}">${esc(x.name)} · ${esc(hostAddr(x))}</option>`).join('');
+  ff.id.value = f?.id || ''; ff.name.value = f?.name || ''; ff.type.value = f?.type || 'local';
+  ff.hostId.value = f?.hostId || hosts[0].id;
+  ff.bindHost.value = f?.bindHost || '127.0.0.1'; ff.bindPort.value = f?.bindPort || '';
+  ff.destHost.value = f?.destHost || '127.0.0.1'; ff.destPort.value = f?.destPort || '';
+  $('#fwdDel').classList.toggle('hidden', !f);
+  setFwdTypeUI();
+  openDrawer('#fwdDrawer');
+  setTimeout(() => ff.name.focus(), 180);
+}
+fform.addEventListener('change', (e) => { if (e.target.name === 'type') setFwdTypeUI(); });
+$('#fwdDel').onclick = () => { const f = forwards.find((x) => x.id === ff.id.value); if (f) deleteFwd(f); };
+$('#fwdSaveStart').onclick = () => { startAfterSave = true; fform.requestSubmit(); };
+fform.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const go = startAfterSave; startAfterSave = false;
+  const wasOn = fwdState.get(ff.id.value) === 'running';
+  if (wasOn) await api.fwd.stop(ff.id.value);
+  const saved = await api.fwd.save(Object.fromEntries(new FormData(fform).entries()));
+  closeDrawers();
+  await loadForwards();
+  if (go || wasOn) toggleFwd(saved); else toast(t('saved'));
+});
+
 // ---------- command palette ----------
 let palItems = [], palSel = 0;
 function openPalette() {
@@ -702,6 +886,7 @@ function renderPalette() {
   [
     { icon: 'plus', label: t('newHost'), run: () => { setNav('hosts'); openHostEditor(null); } },
     { icon: 'plus', label: t('newSnippet'), run: () => { setNav('snippets'); openSnipEditor(null); } },
+    { icon: 'forward', label: t('addFwd'), run: () => { setNav('forwards'); openFwdEditor(null); } },
     { icon: 'sun', label: t('cmdToggleTheme'), run: () => { settings.theme = isDark() ? 'light' : 'dark'; saveSettings(); applySettings(); syncSettingsUI(); } },
     { icon: 'sliders', label: t('settings'), run: () => setNav('settings') },
   ].filter((a) => hit(a.label)).forEach((a) => items.push({ g: 'grpActions', ...a }));
@@ -743,6 +928,7 @@ document.addEventListener('keydown', (e) => {
     switchTab(ids[(ids.indexOf(activeTab) + (e.shiftKey ? ids.length - 1 : 1)) % ids.length]);
   }
   if (e.ctrlKey && e.shiftKey && e.code === 'KeyW' && activeTab !== 'home') { e.preventDefault(); closeTab(activeTab); }
+  if (e.ctrlKey && e.shiftKey && e.code === 'KeyD' && tabs.has(activeTab)) { e.preventDefault(); const tb = tabs.get(activeTab); if (paneList(activeTab).length < 4) openSession(tb.hostId, tb.quick, tb.sid); else toast(t('maxPanes'), true); }
   if (e.ctrlKey && e.shiftKey && e.code === 'KeyT') { e.preventDefault(); setNav('hosts'); }
   if (e.ctrlKey && !e.shiftKey && (e.code === 'Equal' || e.code === 'Minus' || e.code === 'Digit0')) {
     e.preventDefault();
@@ -757,7 +943,7 @@ document.addEventListener('keydown', (e) => {
   if (!['system', 'dark', 'light'].includes(settings.theme)) settings.theme = 'system';
   if (!settings.lang) settings.lang = navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en';
   applySettings();
-  await Promise.all([loadHosts(), loadSnippets()]);
+  await Promise.all([loadHosts(), loadSnippets(), loadForwards()]);
   refreshTexts();
   $('#omni').focus();
 })();

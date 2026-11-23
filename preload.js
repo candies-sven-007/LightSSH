@@ -6,6 +6,14 @@ contextBridge.exposeInMainWorld('api', {
     save: (h) => ipcRenderer.invoke('hosts:save', h),
     remove: (id) => ipcRenderer.invoke('hosts:delete', id),
   },
+  fwd: {
+    list: () => ipcRenderer.invoke('fwd:list'),
+    save: (r) => ipcRenderer.invoke('fwd:save', r),
+    remove: (id) => ipcRenderer.invoke('fwd:delete', id),
+    start: (id, lang) => ipcRenderer.invoke('fwd:start', id, lang),
+    stop: (id) => ipcRenderer.invoke('fwd:stop', id),
+    onStatus: (cb) => ipcRenderer.on('fwd:status', (_e, id, s, m) => cb(id, s, m)),
+  },
   setTheme: (dark) => ipcRenderer.invoke('win:theme', dark),
   snippets: {
     list: () => ipcRenderer.invoke('snippets:list'),

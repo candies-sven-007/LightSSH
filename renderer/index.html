@@ -10,10 +10,11 @@
 <body>
 
 <aside id="sidebar">
-  <div class="brand drag"><span class="logo">&gt;_</span><span class="wordmark">LightSSH</span></div>
+  <div class="brand drag"><span class="logo"><i data-ic="terminal"></i></span><span class="wordmark">LightSSH</span></div>
   <nav>
     <button class="nav on" data-nav="hosts"><i data-ic="server"></i><span data-i18n="hosts"></span><em id="navHostCount"></em></button>
     <button class="nav" data-nav="snippets"><i data-ic="zap"></i><span data-i18n="snippets"></span><em id="navSnipCount"></em></button>
+    <button class="nav" data-nav="forwards"><i data-ic="forward"></i><span data-i18n="forwards"></span><em id="navFwdCount"></em></button>
   </nav>
   <div class="side-label" id="liveLabel" data-i18n="sessions"></div>
   <div id="liveList"></div>
@@ -23,29 +24,37 @@
 
 <main id="main">
   <div id="tabbar" class="drag">
-    <div class="tab active" data-tab="home"><i data-ic="grid"></i><span class="tl" id="homeTabLabel"></span></div>
+    <div class="tab active" data-tab="home"><span id="homeTabIcon" class="tic"><i data-ic="server"></i></span><span class="tl" id="homeTabLabel"></span></div>
   </div>
   <div id="views">
     <!-- hosts -->
     <section id="view-hosts" class="view page active">
+      <div class="page-title"><div><h1 data-i18n="hosts"></h1><p id="hostsSub"></p></div>
+        <button class="btn dark" id="btnNewHost"><i data-ic="plus"></i><span data-i18n="newHost"></span></button></div>
       <div class="page-head">
         <div class="omni"><i data-ic="search"></i><input id="omni" spellcheck="false" data-i18n-ph="omniPh"><kbd>Ctrl K</kbd></div>
-        <button class="btn dark" id="btnNewHost"><i data-ic="plus"></i><span data-i18n="newHost"></span></button>
       </div>
       <div id="hostsContent" class="page-body"></div>
     </section>
     <!-- snippets -->
     <section id="view-snippets" class="view page">
+      <div class="page-title"><div><h1 data-i18n="snippets"></h1><p data-i18n="snipSub"></p></div>
+        <button class="btn dark" id="btnNewSnip"><i data-ic="plus"></i><span data-i18n="newSnippet"></span></button></div>
       <div class="page-head">
         <div class="omni"><i data-ic="search"></i><input id="snipSearch" spellcheck="false" data-i18n-ph="searchSnippets"></div>
-        <button class="btn dark" id="btnNewSnip"><i data-ic="plus"></i><span data-i18n="newSnippet"></span></button>
       </div>
       <div id="snipContent" class="page-body"></div>
     </section>
+    <!-- port forwarding -->
+    <section id="view-forwards" class="view page">
+      <div class="page-title"><div><h1 data-i18n="forwards"></h1><p data-i18n="fwdSub"></p></div>
+        <button class="btn dark" id="btnNewFwd"><i data-ic="plus"></i><span data-i18n="newFwd"></span></button></div>
+      <div id="fwdContent" class="page-body"></div>
+    </section>
     <!-- settings -->
     <section id="view-settings" class="view page">
+      <div class="page-title narrow"><div><h1 data-i18n="settings"></h1><p data-i18n="setSub"></p></div></div>
       <div class="page-body narrow">
-        <h1 data-i18n="settings"></h1>
         <div class="card">
           <div class="card-label"><i data-ic="sun"></i><span data-i18n="appearance"></span></div>
           <div class="set-row"><span data-i18n="theme"></span>
@@ -55,6 +64,8 @@
         </div>
         <div class="card">
           <div class="card-label"><i data-ic="terminal"></i><span data-i18n="terminal"></span></div>
+          <div class="set-row"><span data-i18n="termColors"></span>
+            <div class="seg" id="setTermTheme"><button data-v="dark" data-i18n="ttDark"></button><button data-v="match" data-i18n="ttMatch"></button></div></div>
           <div class="set-row"><span data-i18n="fontSize"></span><div class="range"><input type="range" id="setFont" min="10" max="24"><em id="setFontV"></em></div></div>
           <div class="set-row"><span data-i18n="fontFamily"></span>
             <select id="setFamily" class="input">
@@ -92,6 +103,7 @@
           <label class="w90"><span data-i18n="fPort"></span><input class="input" name="port" type="number" value="22" min="1" max="65535"></label>
         </div>
         <label><span data-i18n="fUser"></span><input class="input" name="username" required placeholder="root"></label>
+        <label><span data-i18n="fJump"></span><select class="input" name="jumpHostId" id="jumpSelect"></select><small class="hint" data-i18n="fJumpHint"></small></label>
       </div>
       <div class="fgroup">
         <div class="fg-label" data-i18n="auth"></div>
@@ -130,6 +142,47 @@
       <button type="button" id="snipDel" class="ib danger" data-i18n-title="delete"><i data-ic="trash"></i></button>
       <span class="grow"></span>
       <button type="submit" class="btn dark" data-i18n="save"></button>
+    </div>
+  </form>
+</aside>
+
+<!-- right drawer: port forward editor -->
+<aside id="fwdDrawer" class="drawer">
+  <form id="fwdForm" autocomplete="off">
+    <div class="drawer-head"><h2 id="fwdTitle"></h2><button type="button" class="ib" data-close><i data-ic="x"></i></button></div>
+    <div class="drawer-body">
+      <input type="hidden" name="id">
+      <div class="fgroup">
+        <div class="fg-label" data-i18n="general"></div>
+        <label><span data-i18n="fName"></span><input class="input" name="name" data-i18n-ph="fwdNamePh"></label>
+        <div class="seg auth fwd-type">
+          <label><input type="radio" name="type" value="local" checked><span><b data-i18n="tLocal"></b></span></label>
+          <label><input type="radio" name="type" value="remote"><span><b data-i18n="tRemote"></b></span></label>
+          <label><input type="radio" name="type" value="dynamic"><span><b data-i18n="tDynamic"></b></span></label>
+        </div>
+        <p class="type-help" id="fwdHelp"></p>
+        <label><span data-i18n="fwdHost"></span><select class="input" name="hostId" id="fwdHostSelect" required></select></label>
+      </div>
+      <div class="fgroup">
+        <div class="fg-label" id="bindLabel"></div>
+        <div class="row">
+          <label class="grow"><span data-i18n="fBindHost"></span><input class="input mono" name="bindHost" placeholder="127.0.0.1"></label>
+          <label class="w90"><span data-i18n="fPort"></span><input class="input mono" name="bindPort" type="number" min="1" max="65535" required placeholder="8080"></label>
+        </div>
+      </div>
+      <div class="fgroup dest">
+        <div class="fg-label" id="destLabel"></div>
+        <div class="row">
+          <label class="grow"><span data-i18n="fDestHost"></span><input class="input mono" name="destHost" placeholder="127.0.0.1"></label>
+          <label class="w90"><span data-i18n="fPort"></span><input class="input mono" name="destPort" type="number" min="1" max="65535" placeholder="5432"></label>
+        </div>
+      </div>
+    </div>
+    <div class="drawer-foot">
+      <button type="button" id="fwdDel" class="ib danger" data-i18n-title="delete"><i data-ic="trash"></i></button>
+      <span class="grow"></span>
+      <button type="submit" class="btn" data-i18n="save"></button>
+      <button type="button" id="fwdSaveStart" class="btn dark" data-i18n="saveStart"></button>
     </div>
   </form>
 </aside>

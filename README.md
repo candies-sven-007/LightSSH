@@ -1,16 +1,18 @@
 # LightSSH
 
-简洁的 Windows SSH 客户端：Termius 式的布局，安静的哑光界面，深色 / 浅色两套主题。中文 / English 双语。
-A clean SSH client for Windows: a Termius-style layout in a quiet, matte interface with dark and light themes. Chinese and English.
+简洁的 Windows SSH 客户端：Termius 式的布局，Hark 式的界面。跳板机、端口转发、分屏、SFTP，中文 / English 双语。
+A clean SSH client for Windows: a Termius-style layout with a Hark-style interface. Jump hosts, port forwarding, split panes, SFTP, in Chinese and English.
 
 ![Hosts](docs/home.png)
-![Session](docs/session.png)
+![Split panes](docs/split.png)
 
-| 编辑主机 / Host editor | 设置 / Settings |
+| 端口转发 / Port forwarding | 编辑规则 / Rule editor |
 |---|---|
-| ![Editor](docs/editor.png) | ![Settings](docs/settings.png) |
+| ![Forwarding](docs/forwards.png) | ![Rule](docs/forward-edit.png) |
 
-![Command palette](docs/palette.png)
+| 会话 + SFTP / Session | 深色 / Dark |
+|---|---|
+| ![Session](docs/session.png) | ![Dark](docs/dark.png) |
 
 ## 功能 / Features
 
@@ -18,6 +20,9 @@ A clean SSH client for Windows: a Termius-style layout in a quiet, matte interfa
   Hosts with groups, search, duplicate and recents; password or key auth, secrets encrypted with DPAPI
 - 多标签终端：查找（Ctrl+F）、可点击链接、中文字符宽度正确、右键菜单
   Multi-tab terminal with search, clickable links, correct CJK width, context menu
+- 跳板机：经一台或多台主机跳转连接 / Jump hosts, chains allowed
+- 端口转发：本地、远程、动态 SOCKS5，一键开关 / Port forwarding: local, remote and dynamic SOCKS5 with on/off switches
+- 分屏：最多 4 个终端并排 / Split panes, up to 4 terminals side by side
 - 命令片段：在终端里一键执行 / Snippets you run from inside the terminal
 - SFTP：浏览、上传、下载、重命名、删除、新建文件夹、拖放上传、在终端中打开
   SFTP browse, upload, download, rename, delete, mkdir, drag & drop, open in terminal
@@ -28,16 +33,18 @@ A clean SSH client for Windows: a Termius-style layout in a quiet, matte interfa
 
 ## 下载 / Download
 
-在 [Releases](https://github.com/candies-sven-007/LightSSH/releases) 下载 `LightSSH-win32-x64-vX.Y.Z.zip`，解压后运行 `LightSSH.exe`。
+在 [Releases](https://github.com/candies-sven-007/LightSSH/releases) 下载安装包 `LightSSH-Setup-vX.Y.Z.exe`（当前用户安装，无需管理员），或免安装的 `LightSSH-win32-x64-vX.Y.Z.zip`。
 程序未签名，首次运行如遇 SmartScreen：「更多信息」→「仍要运行」。
 
-Download the zip from Releases, unzip, run `LightSSH.exe`. It is unsigned, so SmartScreen may ask: "More info" → "Run anyway".
+Download `LightSSH-Setup-vX.Y.Z.exe` (per-user, no admin) or the portable zip from Releases. It is unsigned, so SmartScreen may ask: "More info" → "Run anyway".
 
 ## 快捷键 / Shortcuts
 
 | 操作 / Action | 按键 / Keys |
 |---|---|
+| 命令面板 / Command palette | Ctrl+K |
 | 查找 / Find | Ctrl+F |
+| 分屏 / Split | Ctrl+Shift+D |
 | 复制 / 粘贴 · Copy / Paste | Ctrl+Shift+C / Ctrl+Shift+V |
 | 切换标签 / Switch tab | Ctrl+Tab |
 | 关闭标签 / Close tab | Ctrl+Shift+W |
