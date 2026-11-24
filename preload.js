@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('api', {
     list: () => ipcRenderer.invoke('hosts:list'),
     save: (h) => ipcRenderer.invoke('hosts:save', h),
     remove: (id) => ipcRenderer.invoke('hosts:delete', id),
+    importSshConfig: (pick) => ipcRenderer.invoke('hosts:importSshConfig', pick),
   },
   fwd: {
     list: () => ipcRenderer.invoke('fwd:list'),
@@ -39,8 +40,8 @@ contextBridge.exposeInMainWorld('api', {
   sftp: {
     home: (sid) => ipcRenderer.invoke('sftp:home', sid),
     list: (sid, dir) => ipcRenderer.invoke('sftp:list', sid, dir),
-    download: (sid, dir, name) => ipcRenderer.invoke('sftp:download', sid, dir, name),
-    upload: (sid, dir, paths) => ipcRenderer.invoke('sftp:upload', sid, dir, paths),
+    download: (sid, dir, name, isDir) => ipcRenderer.invoke('sftp:download', sid, dir, name, isDir),
+    upload: (sid, dir, paths, folder) => ipcRenderer.invoke('sftp:upload', sid, dir, paths, folder),
     mkdir: (sid, dir, name) => ipcRenderer.invoke('sftp:mkdir', sid, dir, name),
     rename: (sid, dir, a, b) => ipcRenderer.invoke('sftp:rename', sid, dir, a, b),
     remove: (sid, dir, name, isDir) => ipcRenderer.invoke('sftp:delete', sid, dir, name, isDir),

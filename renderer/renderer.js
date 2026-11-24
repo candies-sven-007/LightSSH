@@ -1,5 +1,5 @@
 /* LightSSH renderer — Termius-style layout, Hark-style surfaces */
-const VERSION = '1.5.0';
+const VERSION = '1.6.0';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -101,7 +101,14 @@ function toast(msg, err) {
   el.textContent = msg; el.className = err ? 'err' : '';
   clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.add('hidden'), 3000);
 }
-function ask(title, { value = '', type = 'text', confirmOnly = false, danger = false } = {}) {
+// prompts are queued: if two sessions ask at the same time, the second waits for the first
+let askChain = Promise.resolve();
+function ask(title, opts) {
+  const run = askChain.then(() => askNow(title, opts));
+  askChain = run.catch(() => {});
+  return run;
+}
+function askNow(title, { value = '', type = 'text', confirmOnly = false, danger = false } = {}) {
   return new Promise((resolve) => {
     const m = $('#prompt'), inp = $('#promptInput'), ok = $('#promptOk');
     $('#promptTitle').textContent = title;
@@ -190,7 +197,8 @@ function renderHosts() {
   if (!hosts.length) {
     el.innerHTML = `<div class="empty">
       <div class="empty-ic">${icon('server')}</div><h3>${t('emptyTip')}</h3><p>${t('emptySub')}</p>
-      <button class="btn dark" data-home="new">${icon('plus')}<span>${t('newHost')}</span></button></div>`;
+      <div class="row center"><button class="btn dark" data-home="new">${icon('plus')}<span>${t('newHost')}</span></button>
+      <button class="btn" data-home="import">${icon('download')}<span>${t('importSsh')}</span></button></div></div>`;
     return;
   }
   const card = (h) => `
@@ -209,6 +217,7 @@ function renderHosts() {
 }
 $('#hostsContent').addEventListener('click', (e) => {
   if (e.target.closest('[data-home="new"]')) return openHostEditor(null);
+  if (e.target.closest('[data-home="import"]')) return importSshConfig(false);
   const c = e.target.closest('.hcard'); if (!c) return;
   const h = hosts.find((x) => x.id === c.dataset.id);
   if (e.target.closest('[data-act="edit"]')) openHostEditor(h); else openSession(h.id);
@@ -218,6 +227,15 @@ $('#hostsContent').addEventListener('contextmenu', (e) => {
   e.preventDefault(); hostMenu(e.clientX, e.clientY, hosts.find((x) => x.id === c.dataset.id));
 });
 $('#btnNewHost').onclick = () => openHostEditor(null);
+$('#btnImport').onclick = () => importSshConfig(false);
+async function importSshConfig(pick) {
+  try {
+    const r = await api.hosts.importSshConfig(pick);
+    if (!r) return;
+    await loadHosts();
+    toast(t('imported', r.added, r.skipped));
+  } catch (err) { toast(t('failed', cleanErr(err)), true); }
+}
 $('#omni').addEventListener('input', renderHosts);
 $('#omni').addEventListener('keydown', (e) => {
   if (e.key !== 'Enter') return;
@@ -437,7 +455,7 @@ function closeTab(sid) {
   const mates = paneList(sid).filter((s) => s !== sid);
   if (tab.gid) detach(sid, false);
   api.ssh.close(sid);
-  tab.term.dispose(); tab.ro.disconnect();
+  cancelAnimationFrame(tab.fitRaf); tab.ro.disconnect(); tab.term.dispose();
   tab.tabEl.remove(); tab.view.remove();
   tabs.delete(sid);
   if (activeTab === sid || mates.includes(activeTab)) switchTab(mates[0] || [...tabs.keys()].pop() || 'home');
@@ -491,6 +509,7 @@ function openSession(hostId, quick, splitFrom) {
       <div class="files"></div>
       <div class="sftp-foot">
         <button class="btn dark sm" data-s="upload">${icon('upload')}<span>${t('upload')}</span></button>
+        <button class="ib" data-s="uploadDir" title="${t('uploadFolder')}">${icon('folderUp')}</button>
         <button class="btn sm" data-s="mkdir">${icon('folderPlus')}<span>${t('mkdir')}</span></button>
         <span class="grow"></span><span class="fcnt"></span>
       </div>
@@ -513,8 +532,12 @@ function openSession(hostId, quick, splitFrom) {
   term.unicode.activeVersion = '11';
   term.loadAddon(new WebLinksAddon.WebLinksAddon((_ev, uri) => window.open(uri)));
   term.open($('.term', view));
+  // GPU renderer: much faster than the DOM renderer for heavy output; falls back to DOM if WebGL is unavailable or lost
+  if (window.WebglAddon) {
+    try { const gl = new WebglAddon.WebglAddon(); gl.onContextLoss(() => gl.dispose()); term.loadAddon(gl); } catch {}
+  }
 
-  const tab = { sid, hostId, quick, label, term, fitAddon, search, view, tabEl, state: 'connecting', cwd: '', files: null, showHidden: false, password: null };
+  const tab = { sid, hostId, quick, label, term, fitAddon, search, view, tabEl, state: 'connecting', cwd: '', files: null, showHidden: false, password: null, passphrase: null, fitRaf: 0 };
   tabs.set(sid, tab);
 
   const paste = () => { const txt = api.clip.read(); if (txt && tab.state === 'connected') term.paste(txt); };
@@ -582,9 +605,15 @@ function reconnect(tab) {
   setTimeout(() => connect(tab), 150);
 }
 
-function fit(tab) {
+// ResizeObserver can fire many times per frame while dragging; fit at most once per frame
+function fit(tab, now = false) {
   if (!tab.view.classList.contains('active')) return;
-  try { tab.fitAddon.fit(); } catch {}
+  if (now) { cancelAnimationFrame(tab.fitRaf); tab.fitRaf = 0; try { tab.fitAddon.fit(); } catch {} return; }
+  if (tab.fitRaf) return;
+  tab.fitRaf = requestAnimationFrame(() => {
+    tab.fitRaf = 0;
+    if (tabs.has(tab.sid) && tab.view.classList.contains('active')) { try { tab.fitAddon.fit(); } catch {} }
+  });
 }
 
 function updateStatus(tab) {
@@ -595,19 +624,23 @@ function updateStatus(tab) {
   renderLive();
 }
 
-async function connect(tab) {
+const alive = (tab) => tabs.get(tab.sid) === tab;
+async function connect(tab, attempt = 0) {
   const h = tab.hostId ? hosts.find((x) => x.id === tab.hostId) : null;
   let password = tab.password;
   const needPwd = tab.quick || (h && h.authType === 'password' && !h.hasPassword);
   if (needPwd && password == null) {
+    tab.state = 'connecting'; updateStatus(tab);
     password = await ask(t('askPwd', tab.label), { type: 'password' });
+    if (!alive(tab)) return;
     if (password == null) { tab.state = 'closed'; updateStatus(tab); tab.term.write(`\x1b[90m${t('pressEnter')}\x1b[0m\r\n`); return; }
   }
   tab.state = 'connecting'; updateStatus(tab);
-  fit(tab);
+  fit(tab, true);
   tab.term.write(`\x1b[90m${t('connecting')} ${tab.label} …\x1b[0m\r\n`);
   try {
-    await api.ssh.connect({ sid: tab.sid, hostId: tab.hostId, quick: tab.quick, password, cols: tab.term.cols, rows: tab.term.rows, lang: settings.lang });
+    await api.ssh.connect({ sid: tab.sid, hostId: tab.hostId, quick: tab.quick, password, passphrase: tab.passphrase, cols: tab.term.cols, rows: tab.term.rows, lang: settings.lang });
+    if (!alive(tab)) { api.ssh.close(tab.sid); return; } // tab was closed while connecting
     tab.password = password;
     tab.state = 'connected'; updateStatus(tab);
     tab.term.focus();
@@ -615,17 +648,30 @@ async function connect(tab) {
     renderHosts();
     if (!$('.sftp', tab.view).classList.contains('hidden')) sftpLoad(tab);
   } catch (err) {
-    tab.password = null;
+    if (!alive(tab)) return;
     tab.state = 'closed'; updateStatus(tab);
-    tab.term.write(`\x1b[31m✕ ${cleanErr(err)}\x1b[0m\r\n\x1b[90m${t('pressEnter')}\x1b[0m\r\n`);
+    tab.term.write(`\x1b[31m✕ ${cleanErr(err)}\x1b[0m\r\n`);
+    // wrong / missing password or key passphrase: ask again right away instead of making the user edit the host
+    const code = errCode(err);
+    if (code && attempt < 3) {
+      const v = await ask(t(code === 'E_AUTH' ? 'askPwdAgain' : 'askPassphrase', tab.label), { type: 'password' });
+      if (!alive(tab)) return;
+      if (v != null) {
+        if (code === 'E_AUTH') tab.password = v; else tab.passphrase = v;
+        return connect(tab, attempt + 1);
+      }
+    }
+    tab.password = null; tab.passphrase = null;
+    tab.term.write(`\x1b[90m${t('pressEnter')}\x1b[0m\r\n`);
   }
 }
-function cleanErr(err) { return String(err?.message || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''); }
+const errCode = (err) => (String(err?.message || err).match(/\b(E_AUTH|E_PASSPHRASE)\|/) || [])[1] || '';
+function cleanErr(err) { return String(err?.message || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, '').replace(/^E_[A-Z]+\|/, ''); }
 
 api.ssh.onData((sid, d) => { const tab = tabs.get(sid); if (tab) tab.term.write(d); });
 api.ssh.onError((sid, m) => { const tab = tabs.get(sid); if (tab) tab.term.write(`\r\n\x1b[31m${m}\x1b[0m\r\n`); });
 api.ssh.onClosed((sid) => {
-  const tab = tabs.get(sid); if (!tab || tab.state === 'closed') return;
+  const tab = tabs.get(sid); if (!tab || tab.state !== 'connected') return;
   tab.state = 'closed'; updateStatus(tab); renderHosts();
   tab.term.write(`\r\n\x1b[33m${t('disconnected')}\x1b[0m · \x1b[90m${t('pressEnter')}\x1b[0m\r\n`);
 });
@@ -699,7 +745,7 @@ function renderFiles(tab) {
 async function fileAction(tab, act, f) {
   try {
     if (act === 'open') { if (f.isDir || f.isLink) return sftpLoad(tab, fullPath(tab, f.name)); return fileAction(tab, 'download', f); }
-    if (act === 'download') { const p = await api.sftp.download(tab.sid, tab.cwd, f.name); hideProg(tab); if (p) toast(t('downloaded', p)); }
+    if (act === 'download') { const p = await api.sftp.download(tab.sid, tab.cwd, f.name, f.isDir); hideProg(tab); if (p) toast(t('downloaded', p)); }
     if (act === 'rename') { const n = await ask(t('newName'), { value: f.name }); if (n && n !== f.name) { await api.sftp.rename(tab.sid, tab.cwd, f.name, n); sftpLoad(tab); } }
     if (act === 'delete') { if (await confirmBox(t('confirmDel', f.name))) { await api.sftp.remove(tab.sid, tab.cwd, f.name, f.isDir); sftpLoad(tab); } }
     if (act === 'copyPath') { api.clip.write(fullPath(tab, f.name)); toast(t('copied')); }
@@ -714,7 +760,10 @@ function bindSftp(tab) {
     if (s === 'up') up();
     if (s === 'refresh') sftpLoad(tab);
     if (s === 'hidden') { tab.showHidden = !tab.showHidden; e.target.closest('[data-s]').classList.toggle('on', tab.showHidden); renderFiles(tab); }
-    if (s === 'upload') { try { if (await api.sftp.upload(tab.sid, tab.cwd)) { toast(t('uploaded')); sftpLoad(tab); } } catch (err) { toast(t('failed', cleanErr(err)), true); } finally { hideProg(tab); } }
+    if (s === 'upload' || s === 'uploadDir') {
+      try { const n = await api.sftp.upload(tab.sid, tab.cwd, null, s === 'uploadDir'); if (n) { toast(t('uploadedN', n)); sftpLoad(tab); } }
+      catch (err) { toast(t('failed', cleanErr(err)), true); sftpLoad(tab); } finally { hideProg(tab); }
+    }
     if (s === 'mkdir') { const n = await ask(t('newFolderName')); if (n) { try { await api.sftp.mkdir(tab.sid, tab.cwd, n); sftpLoad(tab); } catch (err) { toast(t('failed', cleanErr(err)), true); } } }
     const row = e.target.closest('.file');
     $$('.file.sel', pane).forEach((x) => x.classList.remove('sel'));
@@ -725,6 +774,7 @@ function bindSftp(tab) {
     const row = e.target.closest('.file'); e.preventDefault();
     if (!row) return showMenu(e.clientX, e.clientY, [
       { icon: 'upload', label: t('upload'), run: () => $('[data-s="upload"]', pane).click() },
+      { icon: 'folderUp', label: t('uploadFolder'), run: () => $('[data-s="uploadDir"]', pane).click() },
       { icon: 'folderPlus', label: t('mkdir'), run: () => $('[data-s="mkdir"]', pane).click() },
       { icon: 'terminal', label: t('cdHere'), run: () => fileAction(tab, 'cd', null) },
       { icon: 'refresh', label: t('refresh'), run: () => sftpLoad(tab) },
@@ -733,7 +783,8 @@ function bindSftp(tab) {
     const f = tab.files[row.dataset.i];
     showMenu(e.clientX, e.clientY, [
       ...(f.isDir ? [{ icon: 'folder', label: t('open'), run: () => fileAction(tab, 'open', f) },
-        { icon: 'terminal', label: t('cdHere'), run: () => fileAction(tab, 'cd', f) }]
+        { icon: 'terminal', label: t('cdHere'), run: () => fileAction(tab, 'cd', f) },
+        { icon: 'download', label: t('download'), run: () => fileAction(tab, 'download', f) }]
         : [{ icon: 'download', label: t('download'), run: () => fileAction(tab, 'download', f) }]),
       { icon: 'edit', label: t('rename'), run: () => fileAction(tab, 'rename', f) },
       { icon: 'copy', label: t('copyPath'), run: () => fileAction(tab, 'copyPath', f) },
@@ -748,8 +799,8 @@ function bindSftp(tab) {
     e.preventDefault(); pane.classList.remove('drag');
     const paths = [...e.dataTransfer.files].map((f) => api.pathForFile(f)).filter(Boolean);
     if (!paths.length || tab.state !== 'connected') return;
-    try { await api.sftp.upload(tab.sid, tab.cwd, paths); toast(t('uploaded')); sftpLoad(tab); }
-    catch (err) { toast(t('failed', cleanErr(err)), true); } finally { hideProg(tab); }
+    try { const n = await api.sftp.upload(tab.sid, tab.cwd, paths); toast(t('uploadedN', n)); sftpLoad(tab); }
+    catch (err) { toast(t('failed', cleanErr(err)), true); sftpLoad(tab); } finally { hideProg(tab); }
   });
 }
 function hideProg(tab) { $('.prog', tab.view).classList.add('hidden'); }
@@ -886,6 +937,7 @@ function renderPalette() {
   [
     { icon: 'plus', label: t('newHost'), run: () => { setNav('hosts'); openHostEditor(null); } },
     { icon: 'plus', label: t('newSnippet'), run: () => { setNav('snippets'); openSnipEditor(null); } },
+    { icon: 'download', label: t('importSsh'), run: () => { setNav('hosts'); importSshConfig(false); } },
     { icon: 'forward', label: t('addFwd'), run: () => { setNav('forwards'); openFwdEditor(null); } },
     { icon: 'sun', label: t('cmdToggleTheme'), run: () => { settings.theme = isDark() ? 'light' : 'dark'; saveSettings(); applySettings(); syncSettingsUI(); } },
     { icon: 'sliders', label: t('settings'), run: () => setNav('settings') },

@@ -16,16 +16,16 @@ A clean SSH client for Windows: a Termius-style layout with a Hark-style interfa
 
 ## 功能 / Features
 
-- 主机管理：分组、搜索、复制、最近连接；密码或私钥登录，密码用 Windows DPAPI 加密保存
-  Hosts with groups, search, duplicate and recents; password or key auth, secrets encrypted with DPAPI
-- 多标签终端：查找（Ctrl+F）、可点击链接、中文字符宽度正确、右键菜单
-  Multi-tab terminal with search, clickable links, correct CJK width, context menu
+- 主机管理：分组、搜索、复制、最近连接、从 `~/.ssh/config` 一键导入（含 `ProxyJump`）；密码或私钥登录，密码用 Windows DPAPI 加密保存，认证/私钥口令失败时直接重输
+  Hosts with groups, search, duplicate, recents and one-click `~/.ssh/config` import (including `ProxyJump`); password or key auth, secrets encrypted with DPAPI, instant re-prompt on auth or passphrase failure
+- 多标签终端：WebGL 硬件加速渲染、输出批处理、查找（Ctrl+F）、可点击链接、中文字符宽度正确、右键菜单
+  Multi-tab terminal with WebGL GPU rendering, batched output, search, clickable links, correct CJK width, context menu
 - 跳板机：经一台或多台主机跳转连接 / Jump hosts, chains allowed
 - 端口转发：本地、远程、动态 SOCKS5，一键开关 / Port forwarding: local, remote and dynamic SOCKS5 with on/off switches
 - 分屏：最多 4 个终端并排 / Split panes, up to 4 terminals side by side
 - 命令片段：在终端里一键执行 / Snippets you run from inside the terminal
-- SFTP：浏览、上传、下载、重命名、删除、新建文件夹、拖放上传、在终端中打开
-  SFTP browse, upload, download, rename, delete, mkdir, drag & drop, open in terminal
+- SFTP：浏览、文件和文件夹递归上传/下载、重命名、删除、新建文件夹、拖放上传、在终端中打开
+  SFTP browse, file & recursive folder upload/download, rename, delete, mkdir, drag & drop, open in terminal
 - 命令面板 Ctrl+K：主机、片段、操作一处搜索 / Command palette (Ctrl+K) for hosts, snippets and actions
 - 主题：跟随系统 / 深色 / 浅色；以及语言、字号、字体、光标、选中即复制
   Theme: system / dark / light; plus language, font size and family, cursor, copy on select

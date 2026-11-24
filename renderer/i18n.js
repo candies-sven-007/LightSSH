@@ -41,6 +41,9 @@ const I18N = {
     general: '基本', address: '地址', auth: '认证', saveConnect: '保存并连接', noSnipHere: '还没有片段，去「片段」页添加。',
     kFind: '在终端中查找', kCopy: '复制 / 粘贴', kTab: '切换标签', kClose: '关闭标签', kHome: '回到主页', kFont: '字号 放大 / 缩小 / 还原', kRe: '断开后重连',
     snipCount: '{0} 行', pressRe: '按 Enter',
+    importSsh: '导入 SSH 配置', importSshTip: '从 ~/.ssh/config 导入主机', imported: '已导入 {0} 台主机，跳过 {1} 台重复',
+    askPwdAgain: '{0} 认证失败，请重新输入密码', askPassphrase: '输入 {0} 的私钥密码',
+    uploadFolder: '上传文件夹', uploadedN: '已上传 {0} 个文件',
   },
   en: {
     hosts: 'Hosts', snippets: 'Snippets', searchHosts: 'Search hosts', searchSnippets: 'Search snippets',
@@ -83,6 +86,9 @@ const I18N = {
     skyAuto: 'Auto', skyDay: 'Day', skyDusk: 'Dusk', skyNight: 'Night', terminal: 'Terminal', shortcuts: 'Shortcuts',
     general: 'General', address: 'Address', auth: 'Authentication', saveConnect: 'Save & Connect', noSnipHere: 'No snippets yet. Add some on the Snippets page.',
     kFind: 'Find in terminal', kCopy: 'Copy / Paste', kTab: 'Switch tabs', kClose: 'Close tab', kHome: 'Go home', kFont: 'Font bigger / smaller / reset', kRe: 'Reconnect after disconnect',
-    snipCount: '{0} lines', hostsSub: '{0} hosts', pressRe: 'Press Enter',
+    snipCount: '{0} lines', pressRe: 'Press Enter',
+    importSsh: 'Import SSH config', importSshTip: 'Import hosts from ~/.ssh/config', imported: 'Imported {0} hosts, skipped {1} duplicates',
+    askPwdAgain: 'Authentication failed for {0}. Enter the password', askPassphrase: 'Passphrase for the private key of {0}',
+    uploadFolder: 'Upload folder', uploadedN: 'Uploaded {0} files',
   },
 };

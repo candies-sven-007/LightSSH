@@ -346,6 +346,7 @@ html:lang(zh-CN) .drawer-head h2 { font: 650 17px/1 var(--sans); }
 .fg-label { font-size: 11.5px; font-weight: 620; color: var(--text-3); text-transform: uppercase; letter-spacing: .05em; }
 html:lang(zh-CN) .fg-label { text-transform: none; letter-spacing: 0; font-size: 12px; }
 .row { display: flex; gap: 8px; align-items: flex-end; }
+.row.center { justify-content: center; }
 .row.end { justify-content: flex-end; }
 .w90 { width: 96px; }
 .seg.auth { display: flex; }

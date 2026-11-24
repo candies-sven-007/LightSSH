@@ -30,7 +30,8 @@
     <!-- hosts -->
     <section id="view-hosts" class="view page active">
       <div class="page-title"><div><h1 data-i18n="hosts"></h1><p id="hostsSub"></p></div>
-        <button class="btn dark" id="btnNewHost"><i data-ic="plus"></i><span data-i18n="newHost"></span></button></div>
+        <div class="row"><button class="btn" id="btnImport" data-i18n-title="importSshTip"><i data-ic="download"></i><span data-i18n="importSsh"></span></button>
+        <button class="btn dark" id="btnNewHost"><i data-ic="plus"></i><span data-i18n="newHost"></span></button></div></div>
       <div class="page-head">
         <div class="omni"><i data-ic="search"></i><input id="omni" spellcheck="false" data-i18n-ph="omniPh"><kbd>Ctrl K</kbd></div>
       </div>
@@ -218,6 +219,7 @@
 <script src="../node_modules/@xterm/addon-search/lib/addon-search.js"></script>
 <script src="../node_modules/@xterm/addon-unicode11/lib/addon-unicode11.js"></script>
 <script src="../node_modules/@xterm/addon-web-links/lib/addon-web-links.js"></script>
+<script src="../node_modules/@xterm/addon-webgl/lib/addon-webgl.js"></script>
 <script src="icons.js"></script>
 <script src="i18n.js"></script>
 <script src="renderer.js"></script>
