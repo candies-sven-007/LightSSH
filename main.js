@@ -528,9 +528,10 @@ ipcMain.handle('sftp:delete', async (_e, sid, dir, name, isDir) => {
 });
 
 // ---- window ----
-// The window paints its own sky backdrop (no OS acrylic); title bar buttons follow the theme.
+// Warm parchment / olive-umber shell; Windows caption buttons match the top rail.
+const chromeColors = (dark) => ({ color: dark ? '#141412' : '#ede9df', symbolColor: dark ? '#aba79d' : '#57554f', height: 44 });
 ipcMain.handle('win:theme', (_e, dark) => {
-  try { win.setTitleBarOverlay({ color: dark ? '#0d0d0e' : '#f1f0ec', symbolColor: dark ? '#a1a1a6' : '#4a4a4f', height: 44 }); } catch {}
+  try { win.setTitleBarOverlay(chromeColors(dark)); } catch {}
 });
 
 function loadBounds() {
@@ -543,15 +544,16 @@ function loadBounds() {
 
 function createWindow() {
   const b = loadBounds();
+  const dark = nativeTheme.shouldUseDarkColors;
   win = new BrowserWindow({
-    width: b?.width || 1240, height: b?.height || 780, ...(b?.x != null && b?.y != null ? { x: b.x, y: b.y } : {}),
-    minWidth: 860, minHeight: 520,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0d0d0e' : '#f1f0ec',
+    width: b?.width || 1260, height: b?.height || 800, ...(b?.x != null && b?.y != null ? { x: b.x, y: b.y } : {}),
+    minWidth: 860, minHeight: 540,
+    backgroundColor: dark ? '#141412' : '#ede9df',
     title: 'LightSSH',
     icon: path.join(__dirname, 'renderer', 'icon.png'),
     autoHideMenuBar: true,
     titleBarStyle: 'hidden',
-    titleBarOverlay: { color: nativeTheme.shouldUseDarkColors ? '#0d0d0e' : '#f1f0ec', symbolColor: nativeTheme.shouldUseDarkColors ? '#a1a1a6' : '#4a4a4f', height: 44 },
+    titleBarOverlay: chromeColors(dark),
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: false },
   });
   if (b?.maximized) win.maximize();

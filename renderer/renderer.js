@@ -1,14 +1,26 @@
-/* LightSSH renderer — Termius-style layout, Hark-style surfaces */
-const VERSION = '1.6.0';
+/* LightSSH v2.0 renderer — Hark × Claude Edition */
+const VERSION = '2.0.0';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-const DEFAULTS = { lang: '', fontSize: 14, fontFamily: 'Cascadia Mono', theme: 'system', termTheme: 'dark', cursorStyle: 'bar', copyOnSelect: true };
+const DEFAULTS = {
+  lang: '',
+  fontSize: 14,
+  fontFamily: 'Cascadia Mono',
+  theme: 'system',
+  termTheme: 'dark',
+  cursorStyle: 'bar',
+  copyOnSelect: true,
+  hostView: 'grid',
+  sidebarCollapsed: false,
+};
 let settings = { ...DEFAULTS };
 let hosts = [];
 let snippets = [];
 let forwards = [];
+let hostFilter = '__all__';
+
 const fwdState = new Map();
 const groups = new Map(); // gid -> [sid]
 let gseq = 0;
@@ -30,67 +42,164 @@ function applyI18n(root = document) {
   $$('[data-i18n]', root).forEach((el) => { el.textContent = t(el.dataset.i18n); });
   $$('[data-i18n-ph]', root).forEach((el) => { el.placeholder = t(el.dataset.i18nPh); });
   $$('[data-i18n-title]', root).forEach((el) => { el.title = t(el.dataset.i18nTitle); });
+  $('#btnQuickLang').textContent = settings.lang === 'zh' ? '中' : 'EN';
 }
 function refreshTexts() {
   applyI18n();
   $('#homeTabLabel').textContent = t(nav);
   renderKeys();
-  renderHosts(); renderSnippets(); renderLive();
+  renderHosts(); renderSnippets(); renderForwards(); renderLive();
   for (const tab of tabs.values()) { updateStatus(tab); if (tab.files) renderFiles(tab); }
 }
 
-// ---------- theme ----------
+// ---------- theme & terminal palettes (Hark × Claude warm tones) ----------
 const mq = matchMedia('(prefers-color-scheme: dark)');
 const isDark = () => settings.theme === 'dark' || (settings.theme === 'system' && mq.matches);
-const TERM_DARK = {
-  background: '#161617', foreground: '#d6d5cf', cursor: '#d6d5cf', cursorAccent: '#161617', selectionBackground: 'rgba(214,213,207,0.18)',
-  black: '#2a2928', red: '#d9695c', green: '#97a849', yellow: '#d6ad3a', blue: '#5c95c7', magenta: '#cf6f9f', cyan: '#4fb3a8', white: '#bdbbb3',
-  brightBlack: '#6f6e69', brightRed: '#ea8a7e', brightGreen: '#b0bf68', brightYellow: '#e5c35e', brightBlue: '#7fb0d9', brightMagenta: '#e091b8', brightCyan: '#74c7bd', brightWhite: '#f4f3ee',
-};
+
+const makeTermDark = (bg) => ({
+  background: bg,
+  foreground: '#e5e1d6',
+  cursor: '#db7652',
+  cursorAccent: bg,
+  selectionBackground: 'rgba(219, 118, 82, 0.24)',
+  black: '#24231f',
+  red: '#d96b52',
+  green: '#8fb569',
+  yellow: '#dbb053',
+  blue: '#6ea1c9',
+  magenta: '#c97d96',
+  cyan: '#5eb5a6',
+  white: '#c9c5b9',
+  brightBlack: '#75726a',
+  brightRed: '#ea8870',
+  brightGreen: '#a8ca84',
+  brightYellow: '#e8c472',
+  brightBlue: '#8eb8da',
+  brightMagenta: '#dc99af',
+  brightCyan: '#7ecac0',
+  brightWhite: '#f5f2e9',
+});
 const TERM_LIGHT = {
-  background: '#f7f6f3', foreground: '#1f1f21', cursor: '#1f1f21', cursorAccent: '#f7f6f3', selectionBackground: 'rgba(46,79,255,0.14)',
-  black: '#1f1f21', red: '#b13a2f', green: '#5f7a12', yellow: '#9a7406', blue: '#2a63a8', magenta: '#a3356f', cyan: '#237f77', white: '#8a8983',
-  brightBlack: '#6f6e69', brightRed: '#c9483c', brightGreen: '#6f8c17', brightYellow: '#ad8301', brightBlue: '#3471bd', brightMagenta: '#b8407e', brightCyan: '#2b938a', brightWhite: '#100f0f',
+  background: '#faf8f2',
+  foreground: '#1c1b18',
+  cursor: '#c95f3a',
+  cursorAccent: '#faf8f2',
+  selectionBackground: 'rgba(201, 95, 58, 0.16)',
+  black: '#1c1b18',
+  red: '#b53e2e',
+  green: '#3d7a22',
+  yellow: '#946c0a',
+  blue: '#2a639e',
+  magenta: '#963b68',
+  cyan: '#1f7a70',
+  white: '#8a877e',
+  brightBlack: '#6b6860',
+  brightRed: '#cc4d3b',
+  brightGreen: '#4e8f2f',
+  brightYellow: '#ab7d10',
+  brightBlue: '#3675b5',
+  brightMagenta: '#ad487b',
+  brightCyan: '#299186',
+  brightWhite: '#12110f',
 };
-const termTheme = () => (settings.termTheme === 'match' && !isDark() ? TERM_LIGHT : TERM_DARK);
+const termTheme = () => {
+  if (settings.termTheme === 'match' && !isDark()) return TERM_LIGHT;
+  return makeTermDark(isDark() ? '#131210' : '#151412');
+};
+
 function applyTheme() {
   const dark = isDark();
+  const lightTerm = settings.termTheme === 'match' && !dark;
   document.body.classList.toggle('dark', dark);
-  document.body.classList.toggle('term-light', termTheme() === TERM_LIGHT);
+  document.body.classList.toggle('term-light', lightTerm);
+  $('#quickThemeIc').innerHTML = icon(dark ? 'sun' : 'moon');
   api.setTheme?.(dark);
-  for (const tab of tabs.values()) tab.term.options.theme = termTheme();
+  const pal = termTheme();
+  for (const tab of tabs.values()) tab.term.options.theme = pal;
 }
 mq.addEventListener('change', () => { if (settings.theme === 'system') applyTheme(); });
 
-// ---------- settings ----------
+// ---------- settings & sidebar ----------
 const termFont = () => `"${settings.fontFamily}", "Cascadia Mono", Consolas, "Sarasa Mono SC", "Microsoft YaHei", monospace`;
 const saveSettings = () => api.settings.set(settings);
+
+function applySidebar() {
+  document.body.classList.toggle('sb-collapsed', !!settings.sidebarCollapsed);
+  setTimeout(() => {
+    if (activeTab !== 'home') paneList(activeTab).forEach((s) => fit(tabs.get(s)));
+  }, 250);
+}
+function toggleSidebar() {
+  settings.sidebarCollapsed = !settings.sidebarCollapsed;
+  applySidebar();
+  saveSettings();
+}
+
 function applySettings() {
   applyTheme();
+  applySidebar();
+  const spec = $('#termSpecimen');
+  if (spec) {
+    spec.style.fontFamily = termFont();
+    spec.style.fontSize = settings.fontSize + 'px';
+    $('#specCur').dataset.c = settings.cursorStyle;
+  }
   for (const tab of tabs.values()) {
     Object.assign(tab.term.options, { fontSize: settings.fontSize, fontFamily: termFont(), cursorStyle: settings.cursorStyle });
     fit(tab);
   }
 }
 function syncSettingsUI() {
-  $$('#setTheme button').forEach((b) => b.classList.toggle('on', b.dataset.v === settings.theme));
-  $$('#setLang button').forEach((b) => b.classList.toggle('on', b.dataset.v === settings.lang));
-  $$('#setTermTheme button').forEach((b) => b.classList.toggle('on', b.dataset.v === settings.termTheme));
-  $$('#setCursor button').forEach((b) => b.classList.toggle('on', b.dataset.v === settings.cursorStyle));
+  $$('#setTheme [data-v]').forEach((b) => b.classList.toggle('on', b.dataset.v === settings.theme));
+  $$('#setLang [data-v]').forEach((b) => b.classList.toggle('on', b.dataset.v === settings.lang));
+  $$('#setTermTheme [data-v]').forEach((b) => b.classList.toggle('on', b.dataset.v === settings.termTheme));
+  $$('#setCursor [data-v]').forEach((b) => b.classList.toggle('on', b.dataset.v === settings.cursorStyle));
+  $$('#hostViewSeg [data-v]').forEach((b) => b.classList.toggle('on', b.dataset.v === settings.hostView));
   $('#setFont').value = settings.fontSize; $('#setFontV').textContent = settings.fontSize;
   $('#setFamily').value = settings.fontFamily;
   $('#setCopySel').checked = settings.copyOnSelect;
+  $('#specCur').dataset.c = settings.cursorStyle;
 }
-$('#setTheme').onclick = (e) => { const v = e.target.dataset.v; if (!v) return; settings.theme = v; saveSettings(); applySettings(); syncSettingsUI(); };
-$('#setLang').onclick = (e) => { const v = e.target.dataset.v; if (!v) return; settings.lang = v; saveSettings(); syncSettingsUI(); refreshTexts(); };
-$('#setTermTheme').onclick = (e) => { const v = e.target.dataset.v; if (!v) return; settings.termTheme = v; saveSettings(); applySettings(); syncSettingsUI(); };
-$('#setCursor').onclick = (e) => { const v = e.target.dataset.v; if (!v) return; settings.cursorStyle = v; saveSettings(); applySettings(); syncSettingsUI(); };
+$('#setTheme').onclick = (e) => { const v = e.target.closest('[data-v]')?.dataset.v; if (!v) return; settings.theme = v; saveSettings(); applySettings(); syncSettingsUI(); };
+$('#setLang').onclick = (e) => { const v = e.target.closest('[data-v]')?.dataset.v; if (!v) return; settings.lang = v; saveSettings(); syncSettingsUI(); refreshTexts(); };
+$('#setTermTheme').onclick = (e) => { const v = e.target.closest('[data-v]')?.dataset.v; if (!v) return; settings.termTheme = v; saveSettings(); applySettings(); syncSettingsUI(); };
+$('#setCursor').onclick = (e) => { const v = e.target.closest('[data-v]')?.dataset.v; if (!v) return; settings.cursorStyle = v; saveSettings(); applySettings(); syncSettingsUI(); };
 $('#setFont').oninput = (e) => { settings.fontSize = +e.target.value; $('#setFontV').textContent = settings.fontSize; applySettings(); };
 $('#setFont').onchange = saveSettings;
 $('#setFamily').onchange = (e) => { settings.fontFamily = e.target.value; applySettings(); saveSettings(); };
 $('#setCopySel').onchange = (e) => { settings.copyOnSelect = e.target.checked; saveSettings(); };
+
+$('#btnSidebar').onclick = toggleSidebar;
+$('#btnSidebarOpen').onclick = toggleSidebar;
+$('#btnQuickPalette').onclick = () => openPalette();
+$('#btnTabNew').onclick = () => openPalette();
+$('#btnQuickTheme').onclick = () => {
+  settings.theme = isDark() ? 'light' : 'dark';
+  saveSettings(); applySettings(); syncSettingsUI();
+};
+$('#btnQuickLang').onclick = () => {
+  settings.lang = settings.lang === 'zh' ? 'en' : 'zh';
+  saveSettings(); syncSettingsUI(); refreshTexts();
+};
+$('#hostViewSeg').onclick = (e) => {
+  const v = e.target.closest('[data-v]')?.dataset.v;
+  if (!v || v === settings.hostView) return;
+  settings.hostView = v; saveSettings(); syncSettingsUI(); renderHosts();
+};
+
 function renderKeys() {
-  const rows = [['kPalette', 'Ctrl K'], ['kFind', 'Ctrl F'], ['kCopy', 'Ctrl Shift C / V'], ['kTab', 'Ctrl Tab'], ['kSplit', 'Ctrl Shift D'], ['kClose', 'Ctrl Shift W'], ['kHome', 'Ctrl Shift T'], ['kFont', 'Ctrl + / − / 0'], ['kRe', 'Enter']];
+  const rows = [
+    ['kPalette', 'Ctrl K'],
+    ['kSidebar', 'Ctrl B'],
+    ['kFind', 'Ctrl F'],
+    ['kCopy', 'Ctrl Shift C / V'],
+    ['kSplit', 'Ctrl Shift D'],
+    ['kTab', 'Ctrl Tab'],
+    ['kClose', 'Ctrl Shift W'],
+    ['kHome', 'Ctrl Shift T'],
+    ['kFont', 'Ctrl + / − / 0'],
+    ['kRe', 'Enter'],
+  ];
   $('#keysList').innerHTML = rows.map(([k, v]) => `<div class="key-row"><span>${t(k)}</span><span>${v.split(' ').map((x) => x === '/' ? '<i>/</i>' : `<kbd>${x}</kbd>`).join('')}</span></div>`).join('');
 }
 
@@ -101,6 +210,7 @@ function toast(msg, err) {
   el.textContent = msg; el.className = err ? 'err' : '';
   clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.add('hidden'), 3000);
 }
+
 // prompts are queued: if two sessions ask at the same time, the second waits for the first
 let askChain = Promise.resolve();
 function ask(title, opts) {
@@ -115,7 +225,7 @@ function askNow(title, { value = '', type = 'text', confirmOnly = false, danger 
     inp.classList.toggle('hidden', confirmOnly);
     inp.type = type; inp.value = value;
     ok.textContent = danger ? t('delete') : t('ok');
-    ok.className = 'btn ' + (danger ? 'red' : 'dark');
+    ok.className = 'btn ' + (danger ? 'red' : 'clay');
     m.classList.remove('hidden');
     setTimeout(() => { if (confirmOnly) ok.focus(); else { inp.focus(); inp.select(); } }, 0);
     const done = (v) => { m.classList.add('hidden'); $('#promptForm').onsubmit = null; $('#promptCancel').onclick = null; m._cancel = null; resolve(v); };
@@ -125,8 +235,8 @@ function askNow(title, { value = '', type = 'text', confirmOnly = false, danger 
   });
 }
 const confirmBox = (msg) => ask(msg, { confirmOnly: true, danger: true });
-const openDrawer = (sel) => { closeDrawers(); $(sel).classList.add('open'); };
-const closeDrawers = () => $$('.drawer').forEach((d) => d.classList.remove('open'));
+const openDrawer = (sel) => { closeDrawers(); $('#drawerScrim').classList.add('open'); $(sel).classList.add('open'); };
+const closeDrawers = () => { $('#drawerScrim').classList.remove('open'); $$('.drawer').forEach((d) => d.classList.remove('open')); };
 document.addEventListener('click', (e) => { if (e.target.closest('[data-close]')) closeDrawers(); });
 
 // ---------- context menu ----------
@@ -144,13 +254,21 @@ function hideMenu() { $('#ctx').classList.add('hidden'); }
 document.addEventListener('mousedown', (e) => { if (!e.target.closest('#ctx')) hideMenu(); });
 window.addEventListener('blur', hideMenu);
 
-// ---------- data ----------
+// ---------- data & helpers ----------
 async function loadHosts() { hosts = await api.hosts.list(); renderHosts(); renderLive(); if (forwards.length) renderForwards(); }
 async function loadSnippets() { snippets = await api.snippets.list(); renderSnippets(); }
-async function loadForwards() { forwards = await api.fwd.list(); forwards.forEach((f) => { if (!fwdState.has(f.id) || f.state === 'running') fwdState.set(f.id, f.state); }); renderForwards(); }
+async function loadForwards() {
+  forwards = await api.fwd.list();
+  forwards.forEach((f) => { if (!fwdState.has(f.id) || f.state === 'running') fwdState.set(f.id, f.state); });
+  renderForwards(); renderHosts();
+}
 
-const hue = (s) => { let h = 7; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
-const avatar = (h, cls = '') => `<div class="av ${cls}" style="--h:${hue(h.name + h.host)}">${icon('server')}</div>`;
+function monogram(h) {
+  const raw = String(h.name || h.host || '').trim();
+  const ch = (raw.match(/[A-Za-z0-9\u4e00-\u9fff]/) || [raw[0] || 'S'])[0];
+  const isCjk = /[\u4e00-\u9fff]/.test(ch);
+  return `<div class="av ${isCjk ? 'cjk' : ''}">${esc(ch.toUpperCase())}</div>`;
+}
 const groupBy = (list) => {
   const g = {}; list.forEach((h) => { (g[h.group || ''] ||= []).push(h); });
   return Object.keys(g).sort((a, b) => (a === '') - (b === '') || a.localeCompare(b)).map((k) => [k, g[k]]);
@@ -158,6 +276,10 @@ const groupBy = (list) => {
 const liveHostIds = () => new Set([...tabs.values()].filter((x) => x.state === 'connected').map((x) => x.hostId));
 const jumpName = (h) => (h.jumpHostId ? hosts.find((x) => x.id === h.jumpHostId)?.name || '' : '');
 const hostAddr = (h) => `${h.username}@${h.host}${h.port != 22 ? ':' + h.port : ''}`;
+const parseQuick = (v) => {
+  const m = String(v || '').trim().match(/^(?:ssh\s+)?(?:-p\s*(\d+)\s+)?([^@\s]+)@([^:\s]+)(?::(\d+))?(?:\s+-p\s*(\d+))?$/);
+  return m ? { username: m[2], host: m[3], port: Number(m[4] || m[1] || m[5]) || 22 } : null;
+};
 
 // ---------- navigation ----------
 function setNav(n) {
@@ -169,63 +291,157 @@ function setNav(n) {
   if (n === 'settings') syncSettingsUI();
   switchTab('home');
 }
-$$('#sidebar .nav').forEach((b) => b.onclick = () => setNav(b.dataset.nav));
+$$('#sidebar .nav').forEach((b) => { b.onclick = () => setNav(b.dataset.nav); });
 
-// ---------- sidebar: live sessions ----------
+// ---------- sidebar: live sessions & badges ----------
 function renderLive() {
   const list = [...tabs.values()];
   $('#liveLabel').classList.toggle('hidden', !list.length);
   const vis = activeTab !== 'home' ? paneList(activeTab) : [];
   $('#liveList').innerHTML = list.map((tab) => `
     <button class="live ${tab.sid === activeTab ? 'on' : vis.includes(tab.sid) ? 'vis' : ''}" data-sid="${tab.sid}">
-      <span class="st" data-state="${tab.state}"></span><span class="tl">${esc(tab.label)}</span>
+      <span class="st" data-state="${tab.state}"></span>
+      <span class="tl">${esc(tab.label)}</span>
+      <span class="lx" data-close-sid="${tab.sid}" title="${t('close')}">${icon('x')}</span>
     </button>`).join('');
   $('#navHostCount').textContent = hosts.length || '';
   $('#navSnipCount').textContent = snippets.length || '';
   const nRun = [...fwdState.values()].filter((s) => s === 'running').length;
   $('#navFwdCount').innerHTML = nRun ? `<span class="run-dot"></span>${nRun}` : (forwards.length || '');
 }
-$('#liveList').addEventListener('click', (e) => { const b = e.target.closest('.live'); if (b) switchTab(b.dataset.sid); });
+$('#liveList').addEventListener('click', (e) => {
+  const cx = e.target.closest('[data-close-sid]');
+  if (cx) { e.stopPropagation(); closeTab(cx.dataset.closeSid); return; }
+  const b = e.target.closest('.live');
+  if (b) switchTab(b.dataset.sid);
+});
 
-// ---------- hosts page ----------
+// ---------- hosts page (Claude composer + group pills + card/list views) ----------
+function syncOmniState() {
+  const q = $('#omni').value.trim();
+  const quick = parseQuick(q);
+  $('#omniBox').classList.toggle('ssh-ready', !!quick);
+  $('#omniConnect').classList.toggle('hidden', !quick);
+  $('#omniPalette').classList.toggle('hidden', !!quick);
+}
+
+function renderGroupPills() {
+  const allGroups = [...new Set(hosts.map((h) => h.group).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const hasRecent = hosts.some((h) => h.lastUsed);
+  const hasUngrouped = hosts.some((h) => !h.group) && allGroups.length > 0;
+  const valid = new Set(['__all__', ...(hasRecent ? ['__recent__'] : []), ...allGroups, ...(hasUngrouped ? ['__ungrouped__'] : [])]);
+  if (!valid.has(hostFilter)) hostFilter = '__all__';
+
+  const pills = [
+    { k: '__all__', label: t('allFilter'), n: hosts.length },
+    ...(hasRecent ? [{ k: '__recent__', label: t('recent'), n: '' }] : []),
+    ...allGroups.map((g) => ({ k: g, label: g, n: hosts.filter((h) => h.group === g).length })),
+    ...(hasUngrouped ? [{ k: '__ungrouped__', label: t('ungrouped'), n: hosts.filter((h) => !h.group).length }] : []),
+  ];
+  $('#groupPills').innerHTML = pills.map((p) =>
+    `<button type="button" class="fpill ${hostFilter === p.k ? 'on' : ''}" data-grp="${esc(p.k)}"><span>${esc(p.label)}</span>${p.n !== '' ? `<em>${p.n}</em>` : ''}</button>`
+  ).join('');
+}
+$('#groupPills').addEventListener('click', (e) => {
+  const b = e.target.closest('.fpill');
+  if (!b) return;
+  hostFilter = b.dataset.grp;
+  renderHosts();
+});
+
 function renderHosts() {
+  syncOmniState();
+  renderGroupPills();
+  $$('#hostViewSeg [data-v]').forEach((b) => b.classList.toggle('on', b.dataset.v === settings.hostView));
+
   const q = $('#omni').value.trim().toLowerCase();
-  const list = hosts.filter((h) => !q || [h.name, h.host, h.username, h.group].join(' ').toLowerCase().includes(q));
-  const el = $('#hostsContent');
   const live = liveHostIds();
-  $('#hostsSub').textContent = t('hostsSub', hosts.length) + (live.size ? ' · ' + t('hostsLive', live.size) : '');
+  const nTunnels = [...fwdState.values()].filter((s) => s === 'running').length;
+  const subParts = [t('hostsSub', hosts.length)];
+  if (live.size) subParts.push(t('hostsLive', live.size));
+  if (nTunnels) subParts.push(t('tunnelsActive', nTunnels));
+  $('#hostsSub').textContent = subParts.join(' · ');
+
+  const el = $('#hostsContent');
   if (!hosts.length) {
     el.innerHTML = `<div class="empty">
       <div class="empty-ic">${icon('server')}</div><h3>${t('emptyTip')}</h3><p>${t('emptySub')}</p>
-      <div class="row center"><button class="btn dark" data-home="new">${icon('plus')}<span>${t('newHost')}</span></button>
+      <div class="row center"><button class="btn clay" data-home="new">${icon('plus')}<span>${t('newHost')}</span></button>
       <button class="btn" data-home="import">${icon('download')}<span>${t('importSsh')}</span></button></div></div>`;
     return;
   }
-  const card = (h) => `
-    <div class="hcard" data-id="${h.id}">
-      ${avatar(h)}
-      <div class="hc-text"><div class="hc-name">${esc(h.name)}${live.has(h.id) ? '<span class="live-dot"></span>' : ''}</div>
-        <div class="hc-addr">${esc(hostAddr(h))}</div>
-        <div class="chips"><span class="chip">${icon(h.authType === 'key' ? 'key' : 'lock')}${h.authType === 'key' ? t('authKey') : t('authPwd')}</span>${jumpName(h) ? `<span class="chip">${icon('route')}${esc(jumpName(h))}</span>` : ''}</div></div>
-      <button class="ib hc-edit" data-act="edit" title="${t('edit')}">${icon('edit')}</button>
+
+  let list = hosts.filter((h) => !q || [h.name, h.host, h.username, h.group].join(' ').toLowerCase().includes(q));
+  if (!q) {
+    if (hostFilter === '__recent__') list = list.filter((h) => h.lastUsed).sort((a, b) => b.lastUsed - a.lastUsed);
+    else if (hostFilter === '__ungrouped__') list = list.filter((h) => !h.group);
+    else if (hostFilter !== '__all__') list = list.filter((h) => h.group === hostFilter);
+  }
+
+  if (!list.length) {
+    el.innerHTML = `<div class="none">${esc($('#omni').value.trim() || '')} · ${t('badQuick')}</div>`;
+    return;
+  }
+
+  const chipsHtml = (h) => `<span class="chip">${icon(h.authType === 'key' ? 'key' : 'lock')}${h.authType === 'key' ? t('authKey') : t('authPwd')}</span>${jumpName(h) ? `<span class="chip jump">${icon('route')}${esc(jumpName(h))}</span>` : ''}`;
+
+  if (settings.hostView === 'list') {
+    el.innerHTML = `<div class="hledger">
+      <div class="hl-head"><span>${t('colHost')}</span><span>${t('colAddr')}</span><span>${t('colAuth')}</span><span>${t('colGroup')}</span><span></span></div>
+      ${list.map((h) => `<div class="hrow hcard ${live.has(h.id) ? 'is-live' : ''}" data-id="${h.id}">
+        <div class="hr-host">${monogram(h)}<div class="hc-name">${esc(h.name)}${live.has(h.id) ? '<span class="live-dot"></span>' : ''}</div></div>
+        <div class="hr-addr">${esc(hostAddr(h))}</div>
+        <div class="hr-chips">${chipsHtml(h)}</div>
+        <div class="hr-grp">${esc(h.group || t('ungrouped'))}</div>
+        <div class="hc-acts">
+          <button class="ib" data-act="edit" title="${t('edit')}">${icon('edit')}</button>
+          <button class="ib" data-act="more" title="Menu">${icon('more')}</button>
+        </div>
+      </div>`).join('')}
     </div>`;
-  const recent = !q && hosts.length > 6 ? hosts.filter((h) => h.lastUsed).sort((a, b) => b.lastUsed - a.lastUsed).slice(0, 3) : [];
+    return;
+  }
+
+  const card = (h) => `
+    <div class="hcard ${live.has(h.id) ? 'is-live' : ''}" data-id="${h.id}">
+      ${monogram(h)}
+      <div class="hc-text">
+        <div class="hc-name">${esc(h.name)}${live.has(h.id) ? '<span class="live-dot"></span>' : ''}</div>
+        <div class="hc-addr">${esc(hostAddr(h))}</div>
+        <div class="chips">${chipsHtml(h)}</div>
+      </div>
+      <div class="hc-acts">
+        <button class="ib hc-edit" data-act="edit" title="${t('edit')}">${icon('edit')}</button>
+        <button class="ib" data-act="more" title="Menu">${icon('more')}</button>
+      </div>
+    </div>`;
+
+  if (hostFilter === '__recent__') {
+    el.innerHTML = `<div class="sec-title">${t('recent')}<em>${list.length}</em></div><div class="hgrid">${list.map(card).join('')}</div>`;
+    return;
+  }
+  const recent = !q && hostFilter === '__all__' && hosts.length > 6
+    ? hosts.filter((h) => h.lastUsed).sort((a, b) => b.lastUsed - a.lastUsed).slice(0, 3) : [];
   el.innerHTML = `
     ${recent.length ? `<div class="sec-title">${t('recent')}</div><div class="hgrid">${recent.map(card).join('')}</div>` : ''}
-    ${groupBy(list).map(([g, hs]) => `<div class="sec-title">${esc(g || (recent.length ? t('allHosts') : t('ungrouped')))}<em>${hs.length}</em></div><div class="hgrid">${hs.map(card).join('')}</div>`).join('')}
-    ${!list.length ? `<div class="none">${esc(q)} · ${t('badQuick')}</div>` : ''}`;
+    ${groupBy(list).map(([g, hs]) => `<div class="sec-title">${esc(g || (recent.length ? t('allHosts') : t('ungrouped')))}<em>${hs.length}</em></div><div class="hgrid">${hs.map(card).join('')}</div>`).join('')}`;
 }
+
 $('#hostsContent').addEventListener('click', (e) => {
   if (e.target.closest('[data-home="new"]')) return openHostEditor(null);
   if (e.target.closest('[data-home="import"]')) return importSshConfig(false);
-  const c = e.target.closest('.hcard'); if (!c) return;
-  const h = hosts.find((x) => x.id === c.dataset.id);
-  if (e.target.closest('[data-act="edit"]')) openHostEditor(h); else openSession(h.id);
+  const c = e.target.closest('[data-id]'); if (!c) return;
+  const h = hosts.find((x) => x.id === c.dataset.id); if (!h) return;
+  if (e.target.closest('[data-act="edit"]')) return openHostEditor(h);
+  const more = e.target.closest('[data-act="more"]');
+  if (more) { const rc = more.getBoundingClientRect(); return hostMenu(rc.left, rc.bottom + 4, h); }
+  openSession(h.id);
 });
 $('#hostsContent').addEventListener('contextmenu', (e) => {
-  const c = e.target.closest('.hcard'); if (!c) return;
+  const c = e.target.closest('[data-id]'); if (!c) return;
   e.preventDefault(); hostMenu(e.clientX, e.clientY, hosts.find((x) => x.id === c.dataset.id));
 });
+
 $('#btnNewHost').onclick = () => openHostEditor(null);
 $('#btnImport').onclick = () => importSshConfig(false);
 async function importSshConfig(pick) {
@@ -236,18 +452,23 @@ async function importSshConfig(pick) {
     toast(t('imported', r.added, r.skipped));
   } catch (err) { toast(t('failed', cleanErr(err)), true); }
 }
-$('#omni').addEventListener('input', renderHosts);
-$('#omni').addEventListener('keydown', (e) => {
-  if (e.key !== 'Enter') return;
-  const v = e.target.value.trim(); if (!v) return;
-  const m = v.match(/^(?:ssh\s+)?(?:-p\s*(\d+)\s+)?([^@\s]+)@([^:\s]+)(?::(\d+))?(?:\s+-p\s*(\d+))?$/);
-  if (m) { openSession(null, { username: m[2], host: m[3], port: Number(m[4] || m[1] || m[5]) || 22 }); e.target.value = ''; renderHosts(); return; }
+
+function submitOmni() {
+  const v = $('#omni').value.trim(); if (!v) return;
+  const quick = parseQuick(v);
+  if (quick) { openSession(null, quick); $('#omni').value = ''; renderHosts(); return; }
   const q = v.toLowerCase();
   const hit = hosts.filter((h) => [h.name, h.host, h.username, h.group].join(' ').toLowerCase().includes(q));
-  if (hit.length === 1) { openSession(hit[0].id); e.target.value = ''; renderHosts(); } else if (!hit.length) toast(t('badQuick'), true);
-});
+  if (hit.length === 1) { openSession(hit[0].id); $('#omni').value = ''; renderHosts(); }
+  else if (!hit.length) toast(t('badQuick'), true);
+}
+$('#omni').addEventListener('input', renderHosts);
+$('#omni').addEventListener('keydown', (e) => { if (e.key === 'Enter') submitOmni(); });
+$('#omniConnect').onclick = submitOmni;
+$('#omniPalette').onclick = () => openPalette();
 
 function hostMenu(x, y, h) {
+  if (!h) return;
   showMenu(x, y, [
     { icon: 'terminal', label: t('connect'), run: () => openSession(h.id) },
     { icon: 'edit', label: t('edit'), run: () => openHostEditor(h) },
@@ -261,17 +482,29 @@ async function deleteHost(h) {
 }
 
 // ---------- snippets page ----------
+function activeConnectedTab() {
+  const cur = tabs.get(activeTab);
+  if (cur && cur.state === 'connected') return cur;
+  return [...tabs.values()].reverse().find((x) => x.state === 'connected') || null;
+}
 function renderSnippets() {
   const q = $('#snipSearch').value.trim().toLowerCase();
   const list = snippets.filter((s) => !q || (s.name + ' ' + s.command).toLowerCase().includes(q));
   $('#snipContent').innerHTML = !snippets.length
     ? `<div class="empty"><div class="empty-ic">${icon('zap')}</div><h3>${t('snippets')}</h3><p>${t('emptySnip')}</p>
-        <button class="btn dark" data-snip="new">${icon('plus')}<span>${t('newSnippet')}</span></button></div>`
+        <button class="btn clay" data-snip="new">${icon('plus')}<span>${t('newSnippet')}</span></button></div>`
     : `<div class="sgrid">${list.map((s) => `
       <div class="scard" data-sid="${s.id}">
-        <div class="sc-head"><span class="sn-ic">${icon('zap')}</span><span class="hc-name">${esc(s.name)}</span>
+        <div class="sc-head">
+          <span class="sn-ic">${icon('zap')}</span>
+          <span class="hc-name">${esc(s.name)}</span>
           <span class="hc-meta">${t('snipCount', s.command.split('\n').length)}</span>
-          <button class="ib hc-edit" data-act="edit" title="${t('edit')}">${icon('edit')}</button></div>
+          <div class="hc-acts">
+            <button class="ib" data-act="run" title="${t('run')}">${icon('play')}</button>
+            <button class="ib" data-act="copy" title="${t('copy')}">${icon('copy')}</button>
+            <button class="ib hc-edit" data-act="edit" title="${t('edit')}">${icon('edit')}</button>
+          </div>
+        </div>
         <pre class="sn-cmd">${esc(s.command)}</pre>
       </div>`).join('')}</div>`;
   renderLive();
@@ -280,13 +513,24 @@ $('#snipSearch').addEventListener('input', renderSnippets);
 $('#btnNewSnip').onclick = () => openSnipEditor(null);
 $('#snipContent').addEventListener('click', (e) => {
   if (e.target.closest('[data-snip="new"]')) return openSnipEditor(null);
-  const c = e.target.closest('.scard'); if (c) openSnipEditor(snippets.find((x) => x.id === c.dataset.sid));
+  const c = e.target.closest('.scard'); if (!c) return;
+  const s = snippets.find((x) => x.id === c.dataset.sid); if (!s) return;
+  const act = e.target.closest('[data-act]')?.dataset.act;
+  if (act === 'copy') { api.clip.write(s.command); return toast(t('copied')); }
+  if (act === 'run') {
+    const tb = activeConnectedTab();
+    if (!tb) return toast(t('noSession'), true);
+    switchTab(tb.sid);
+    return runSnippet(tb, s, !e.shiftKey);
+  }
+  openSnipEditor(s);
 });
 $('#snipContent').addEventListener('contextmenu', (e) => {
   const c = e.target.closest('.scard'); if (!c) return;
   e.preventDefault();
   const s = snippets.find((x) => x.id === c.dataset.sid);
   showMenu(e.clientX, e.clientY, [
+    { icon: 'play', label: t('run'), disabled: !activeConnectedTab(), run: () => { const tb = activeConnectedTab(); if (tb) { switchTab(tb.sid); runSnippet(tb, s); } } },
     { icon: 'edit', label: t('edit'), run: () => openSnipEditor(s) },
     { icon: 'copy', label: t('copy'), run: () => { api.clip.write(s.command); toast(t('copied')); } },
     '-',
@@ -366,7 +610,7 @@ sform.addEventListener('submit', async (e) => {
   loadSnippets();
 });
 
-// ---------- tabs ----------
+// ---------- tabs & split panes ----------
 const paneList = (sid) => { const tb = tabs.get(sid); return tb?.gid ? groups.get(tb.gid) : [sid]; };
 function layoutPanes(list) {
   const n = list.length;
@@ -419,7 +663,11 @@ function detach(sid, show = true) {
   const g = groups.get(tb.gid);
   g.splice(g.indexOf(sid), 1);
   tb.gid = null; tb.tabEl.classList.remove('grouped'); tb.view.classList.remove('pane', 'focused'); tb.view.removeAttribute('style');
-  if (g.length === 1) { const o = tabs.get(g[0]); o.gid = null; o.tabEl.classList.remove('grouped'); o.view.classList.remove('pane', 'focused'); o.view.removeAttribute('style'); groups.delete([...groups].find(([, v]) => v === g)[0]); }
+  if (g.length === 1) {
+    const o = tabs.get(g[0]);
+    o.gid = null; o.tabEl.classList.remove('grouped'); o.view.classList.remove('pane', 'focused'); o.view.removeAttribute('style');
+    groups.delete([...groups].find(([, v]) => v === g)[0]);
+  }
   if (show) switchTab(sid);
 }
 function splitMenu(tab, x, y) {
@@ -462,18 +710,19 @@ function closeTab(sid) {
   renderLive(); renderHosts();
 }
 
-// ---------- sessions ----------
+// ---------- sessions (unified terminal island + Claude Artifact SFTP) ----------
 let seq = 0;
 function openSession(hostId, quick, splitFrom) {
   const h = hostId ? hosts.find((x) => x.id === hostId) : null;
   const label = h ? h.name : `${quick.username}@${quick.host}`;
   const addr = h ? `${h.username}@${h.host}:${h.port}` : `${quick.username}@${quick.host}:${quick.port}`;
+  const jn = h ? jumpName(h) : '';
   const sid = 's' + (++seq) + '_' + Date.now();
 
   const tabEl = document.createElement('div');
   tabEl.className = 'tab'; tabEl.dataset.tab = sid;
   tabEl.innerHTML = `<span class="st"></span><span class="tl">${esc(label)}</span><span class="x">${icon('x')}</span>`;
-  $('#tabbar').appendChild(tabEl);
+  $('#tabbar').insertBefore(tabEl, $('#btnTabNew'));
   tabEl.scrollIntoView({ inline: 'nearest' });
 
   const view = document.createElement('section');
@@ -481,7 +730,10 @@ function openSession(hostId, quick, splitFrom) {
   view.innerHTML = `
     <div class="term-wrap">
       <div class="term-bar">
-        <span class="status"></span><span class="addr">${esc(addr)}</span><span class="grow"></span>
+        <span class="status"></span>
+        <span class="addr">${esc(addr)}</span>
+        ${jn ? `<span class="via-pill">${icon('route')}<span>${esc(jn)}</span></span>` : ''}
+        <span class="grow"></span>
         <button class="ib" data-act="snips" title="${t('snippets')}">${icon('zap')}</button>
         <button class="ib" data-act="find" title="${t('find')} (Ctrl+F)">${icon('search')}</button>
         <button class="ib" data-act="reconnect" title="${t('reconnect')}">${icon('refresh')}</button>
@@ -498,17 +750,21 @@ function openSession(hostId, quick, splitFrom) {
     </div>
     <div class="sftp hidden">
       <div class="sftp-head">
-        <div class="card-label">${icon('folder')}<span>SFTP • ${esc(label)}</span></div>
-        <div class="sftp-bar">
+        <div class="sftp-top">
+          <div class="sftp-title">${icon('folder')}<span>SFTP · ${esc(label)}</span></div>
           <button class="ib" data-s="up" title="${t('up')}">${icon('up')}</button>
-          <input class="input path mono" spellcheck="false">
           <button class="ib" data-s="refresh" title="${t('refresh')}">${icon('refresh')}</button>
           <button class="ib tg" data-s="hidden" title="${t('hidden')}">${icon('eye')}</button>
+          <button class="ib" data-s="close" title="${t('close')}">${icon('x')}</button>
         </div>
+        <div class="sftp-bar">
+          <input class="input path mono" spellcheck="false">
+        </div>
+        <div class="crumbs"></div>
       </div>
       <div class="files"></div>
       <div class="sftp-foot">
-        <button class="btn dark sm" data-s="upload">${icon('upload')}<span>${t('upload')}</span></button>
+        <button class="btn clay sm" data-s="upload">${icon('upload')}<span>${t('upload')}</span></button>
         <button class="ib" data-s="uploadDir" title="${t('uploadFolder')}">${icon('folderUp')}</button>
         <button class="btn sm" data-s="mkdir">${icon('folderPlus')}<span>${t('mkdir')}</span></button>
         <span class="grow"></span><span class="fcnt"></span>
@@ -519,7 +775,7 @@ function openSession(hostId, quick, splitFrom) {
   $('#views').appendChild(view);
 
   const term = new Terminal({
-    fontFamily: termFont(), fontSize: settings.fontSize, lineHeight: 1.2,
+    fontFamily: termFont(), fontSize: settings.fontSize, lineHeight: 1.24,
     cursorBlink: true, cursorStyle: settings.cursorStyle, cursorInactiveStyle: 'outline',
     allowProposedApi: true, scrollback: 10000, smoothScrollDuration: 80,
     theme: termTheme(),
@@ -532,7 +788,6 @@ function openSession(hostId, quick, splitFrom) {
   term.unicode.activeVersion = '11';
   term.loadAddon(new WebLinksAddon.WebLinksAddon((_ev, uri) => window.open(uri)));
   term.open($('.term', view));
-  // GPU renderer: much faster than the DOM renderer for heavy output; falls back to DOM if WebGL is unavailable or lost
   if (window.WebglAddon) {
     try { const gl = new WebglAddon.WebglAddon(); gl.onContextLoss(() => gl.dispose()); term.loadAddon(gl); } catch {}
   }
@@ -561,7 +816,7 @@ function openSession(hostId, quick, splitFrom) {
     if (e.ctrlKey && e.shiftKey && e.code === 'KeyC') { const s = term.getSelection(); if (s) api.clip.write(s); return false; }
     if (e.ctrlKey && e.shiftKey && e.code === 'KeyV') { paste(); return false; }
     if (e.ctrlKey && !e.shiftKey && e.code === 'KeyF') { openFind(tab); return false; }
-    if (e.ctrlKey && (e.code === 'KeyK' || e.code === 'Tab' || e.code === 'Equal' || e.code === 'Minus' || e.code === 'Digit0')) return false;
+    if (e.ctrlKey && !e.shiftKey && (e.code === 'KeyK' || e.code === 'KeyB' || e.code === 'Tab' || e.code === 'Equal' || e.code === 'Minus' || e.code === 'Digit0')) return false;
     if (e.ctrlKey && e.shiftKey && (e.code === 'KeyW' || e.code === 'KeyT' || e.code === 'KeyD')) return false;
     return true;
   });
@@ -605,9 +860,8 @@ function reconnect(tab) {
   setTimeout(() => connect(tab), 150);
 }
 
-// ResizeObserver can fire many times per frame while dragging; fit at most once per frame
 function fit(tab, now = false) {
-  if (!tab.view.classList.contains('active')) return;
+  if (!tab || !tab.view.classList.contains('active')) return;
   if (now) { cancelAnimationFrame(tab.fitRaf); tab.fitRaf = 0; try { tab.fitAddon.fit(); } catch {} return; }
   if (tab.fitRaf) return;
   tab.fitRaf = requestAnimationFrame(() => {
@@ -640,7 +894,7 @@ async function connect(tab, attempt = 0) {
   tab.term.write(`\x1b[90m${t('connecting')} ${tab.label} …\x1b[0m\r\n`);
   try {
     await api.ssh.connect({ sid: tab.sid, hostId: tab.hostId, quick: tab.quick, password, passphrase: tab.passphrase, cols: tab.term.cols, rows: tab.term.rows, lang: settings.lang });
-    if (!alive(tab)) { api.ssh.close(tab.sid); return; } // tab was closed while connecting
+    if (!alive(tab)) { api.ssh.close(tab.sid); return; }
     tab.password = password;
     tab.state = 'connected'; updateStatus(tab);
     tab.term.focus();
@@ -651,7 +905,6 @@ async function connect(tab, attempt = 0) {
     if (!alive(tab)) return;
     tab.state = 'closed'; updateStatus(tab);
     tab.term.write(`\x1b[31m✕ ${cleanErr(err)}\x1b[0m\r\n`);
-    // wrong / missing password or key passphrase: ask again right away instead of making the user edit the host
     const code = errCode(err);
     if (code && attempt < 3) {
       const v = await ask(t(code === 'E_AUTH' ? 'askPwdAgain' : 'askPassphrase', tab.label), { type: 'password' });
@@ -677,7 +930,7 @@ api.ssh.onClosed((sid) => {
 });
 
 // ---------- find ----------
-const FIND_OPTS = { decorations: { matchOverviewRuler: '#8f9bff', activeMatchColorOverviewRuler: '#ffb547', matchBackground: '#5a5f8a', activeMatchBackground: '#b07a1e' } };
+const FIND_OPTS = { decorations: { matchOverviewRuler: '#c95f3a', activeMatchColorOverviewRuler: '#dbb053', matchBackground: '#5c3c2e', activeMatchBackground: '#a85a32' } };
 function openFind(tab) {
   const bar = $('.findbar', tab.view); bar.classList.remove('hidden');
   const inp = $('input', bar); inp.focus(); inp.select();
@@ -701,13 +954,26 @@ function bindFind(tab) {
   });
 }
 
-// ---------- SFTP ----------
-function toggleSftp(tab) {
+// ---------- SFTP (Claude Artifact panel with clickable breadcrumbs) ----------
+function toggleSftp(tab, force) {
   const pane = $('.sftp', tab.view);
-  pane.classList.toggle('hidden');
-  $('[data-act="sftp"]', tab.view).classList.toggle('on', !pane.classList.contains('hidden'));
+  const open = force !== undefined ? force : pane.classList.contains('hidden');
+  pane.classList.toggle('hidden', !open);
+  $('[data-act="sftp"]', tab.view).classList.toggle('on', open);
   setTimeout(() => fit(tab), 0);
-  if (!pane.classList.contains('hidden') && tab.state === 'connected' && !tab.cwd) sftpLoad(tab);
+  if (open && tab.state === 'connected' && !tab.cwd) sftpLoad(tab);
+}
+function renderCrumbs(tab) {
+  const el = $('.crumbs', tab.view); if (!el) return;
+  const parts = (tab.cwd || '/').split('/').filter(Boolean);
+  let acc = '';
+  const items = [`<button type="button" class="crumb ${!parts.length ? 'cur' : ''}" data-path="/">/</button>`];
+  parts.forEach((seg, idx) => {
+    acc += '/' + seg;
+    items.push(`<span class="crumb-sep">›</span><button type="button" class="crumb ${idx === parts.length - 1 ? 'cur' : ''}" data-path="${esc(acc)}">${esc(seg)}</button>`);
+  });
+  el.innerHTML = items.join('');
+  el.scrollLeft = el.scrollWidth;
 }
 async function sftpLoad(tab, dir) {
   try {
@@ -715,6 +981,7 @@ async function sftpLoad(tab, dir) {
     const r = await api.sftp.list(tab.sid, dir);
     tab.cwd = r.path; tab.files = r.items;
     $('.path', tab.view).value = r.path;
+    renderCrumbs(tab);
     renderFiles(tab);
   } catch (err) { toast(t('failed', cleanErr(err)), true); }
 }
@@ -756,9 +1023,12 @@ function bindSftp(tab) {
   const v = tab.view, pane = $('.sftp', v);
   const up = () => { const p = tab.cwd.replace(/\/+$/, ''); sftpLoad(tab, p.slice(0, p.lastIndexOf('/')) || '/'); };
   pane.addEventListener('click', async (e) => {
+    const cr = e.target.closest('.crumb');
+    if (cr) return sftpLoad(tab, cr.dataset.path);
     const s = e.target.closest('[data-s]')?.dataset.s;
     if (s === 'up') up();
     if (s === 'refresh') sftpLoad(tab);
+    if (s === 'close') toggleSftp(tab, false);
     if (s === 'hidden') { tab.showHidden = !tab.showHidden; e.target.closest('[data-s]').classList.toggle('on', tab.showHidden); renderFiles(tab); }
     if (s === 'upload' || s === 'uploadDir') {
       try { const n = await api.sftp.upload(tab.sid, tab.cwd, null, s === 'uploadDir'); if (n) { toast(t('uploadedN', n)); sftpLoad(tab); } }
@@ -782,10 +1052,11 @@ function bindSftp(tab) {
     $$('.file.sel', pane).forEach((x) => x.classList.remove('sel')); row.classList.add('sel');
     const f = tab.files[row.dataset.i];
     showMenu(e.clientX, e.clientY, [
-      ...(f.isDir ? [{ icon: 'folder', label: t('open'), run: () => fileAction(tab, 'open', f) },
+      ...(f.isDir ? [
+        { icon: 'folder', label: t('open'), run: () => fileAction(tab, 'open', f) },
         { icon: 'terminal', label: t('cdHere'), run: () => fileAction(tab, 'cd', f) },
-        { icon: 'download', label: t('download'), run: () => fileAction(tab, 'download', f) }]
-        : [{ icon: 'download', label: t('download'), run: () => fileAction(tab, 'download', f) }]),
+        { icon: 'download', label: t('download'), run: () => fileAction(tab, 'download', f) },
+      ] : [{ icon: 'download', label: t('download'), run: () => fileAction(tab, 'download', f) }]),
       { icon: 'edit', label: t('rename'), run: () => fileAction(tab, 'rename', f) },
       { icon: 'copy', label: t('copyPath'), run: () => fileAction(tab, 'copyPath', f) },
       '-',
@@ -812,30 +1083,41 @@ api.sftp.onProgress((sid, name, done, total) => {
   $('span', el).textContent = `${name} · ${pct}%`;
 });
 
-// ---------- port forwarding ----------
+// ---------- port forwarding (Hark tunnel topology cards) ----------
 const fwdTypeIc = { local: 'arrowRight', remote: 'arrowLeft', dynamic: 'globe' };
 function fwdDesc(f) {
   const bind = `${f.bindHost}:${f.bindPort}`;
   if (f.type === 'dynamic') return `${t('socks')} ${bind}`;
   return `${bind} → ${f.destHost}:${f.destPort}`;
 }
+function fwdFlowHtml(f) {
+  const bind = esc(`${f.bindHost}:${f.bindPort}`);
+  if (f.type === 'dynamic') return `<div class="fwd-flow"><span class="fwd-ep">${bind}</span><span class="fwd-arr">→</span><span class="fwd-ep">${esc(t('socks'))}</span></div>`;
+  const dest = esc(`${f.destHost}:${f.destPort}`);
+  return `<div class="fwd-flow"><span class="fwd-ep">${bind}</span><span class="fwd-arr">→</span><span class="fwd-ep">${dest}</span></div>`;
+}
 function renderForwards() {
   const el = $('#fwdContent');
   if (!forwards.length) {
     el.innerHTML = `<div class="empty"><div class="empty-ic">${icon('forward')}</div><h3>${t('fwdEmpty')}</h3><p>${t('fwdEmptySub')}</p>
-      <button class="btn dark" data-fwd="new">${icon('plus')}<span>${t('newFwd')}</span></button></div>`;
+      <button class="btn clay" data-fwd="new">${icon('plus')}<span>${t('newFwd')}</span></button></div>`;
   } else {
     el.innerHTML = `<div class="flist">${forwards.map((f) => {
       const h = hosts.find((x) => x.id === f.hostId);
       const st = fwdState.get(f.id) || 'stopped';
       return `<div class="fcard" data-fid="${f.id}" data-state="${st}">
-        <div class="ftype t-${f.type}">${icon(fwdTypeIc[f.type])}</div>
-        <div class="hc-text"><div class="hc-name">${esc(f.name || fwdDesc(f))}</div>
-          <div class="hc-addr">${esc(fwdDesc(f))}</div>
-          <div class="chips"><span class="chip">${t({ local: 'tLocal', remote: 'tRemote', dynamic: 'tDynamic' }[f.type])}</span>${h ? `<span class="chip">${icon('server')}${esc(t('via', h.name))}</span>` : ''}</div></div>
+        <div class="ftype">${icon(fwdTypeIc[f.type])}</div>
+        <div class="hc-text">
+          <div class="hc-name">${esc(f.name || fwdDesc(f))}</div>
+          ${fwdFlowHtml(f)}
+          <div class="chips">
+            <span class="chip">${t({ local: 'tLocal', remote: 'tRemote', dynamic: 'tDynamic' }[f.type])}</span>
+            ${h ? `<span class="chip jump">${icon('server')}${esc(t('via', h.name))}</span>` : ''}
+          </div>
+        </div>
         <span class="fstate">${t({ running: 'fwdRunning', starting: 'fwdStarting', stopped: 'fwdStopped', error: 'fwdStopped' }[st])}</span>
         <label class="switch" data-act="toggle"><input type="checkbox" ${st === 'running' || st === 'starting' ? 'checked' : ''} ${st === 'starting' ? 'disabled' : ''}><i></i></label>
-        <button class="ib hc-edit" data-act="edit" title="${t('edit')}">${icon('edit')}</button>
+        <div class="hc-acts"><button class="ib hc-edit" data-act="edit" title="${t('edit')}">${icon('edit')}</button></div>
       </div>`;
     }).join('')}</div>`;
   }
@@ -847,11 +1129,11 @@ async function toggleFwd(f) {
   fwdState.set(f.id, 'starting'); renderForwards();
   try { await api.fwd.start(f.id, settings.lang); fwdState.set(f.id, 'running'); toast(t('fwdStarted', fwdDesc(f))); }
   catch (err) { fwdState.set(f.id, 'stopped'); toast(t('failed', cleanErr(err)), true); }
-  renderForwards();
+  renderForwards(); renderHosts();
 }
 api.fwd.onStatus((id, s, m) => {
   if (s === 'error') { toast(t('failed', m), true); return; }
-  fwdState.set(id, s); renderForwards();
+  fwdState.set(id, s); renderForwards(); renderHosts();
 });
 $('#btnNewFwd').onclick = () => openFwdEditor(null);
 $('#fwdContent').addEventListener('click', (e) => {
@@ -924,24 +1206,41 @@ function openPalette() {
 }
 const closePalette = () => $('#palette').classList.add('hidden');
 function renderPalette() {
-  const q = $('#palInput').value.trim().toLowerCase();
-  const m = q.match(/^(?:ssh\s+)?([^@\s]+)@([^:\s]+)(?::(\d+))?$/);
+  const raw = $('#palInput').value.trim();
+  const q = raw.toLowerCase();
+  const quick = parseQuick(raw);
   const items = [];
-  if (m) items.push({ g: 'grpActions', icon: 'terminal', label: t('connectTo', q), run: () => openSession(null, { username: m[1], host: m[2], port: Number(m[3]) || 22 }) });
+  if (quick) items.push({ g: 'grpActions', icon: 'terminal', label: t('connectTo', `${quick.username}@${quick.host}:${quick.port}`), run: () => openSession(null, quick) });
   const hit = (s) => !q || s.toLowerCase().includes(q);
+
+  [...tabs.values()].filter((tb) => hit(tb.label)).slice(0, 5)
+    .forEach((tb) => items.push({ g: 'grpSessions', icon: 'terminal', label: tb.label, sub: t(tb.state === 'connected' ? 'connected' : 'disconnected'), run: () => switchTab(tb.sid) }));
+
   hosts.filter((h) => hit([h.name, h.host, h.username, h.group].join(' '))).slice(0, 8)
     .forEach((h) => items.push({ g: 'grpHosts', icon: 'server', label: h.name, sub: hostAddr(h), run: () => openSession(h.id) }));
+
   const tab = tabs.get(activeTab);
   snippets.filter((s) => hit(s.name + ' ' + s.command)).slice(0, 6)
     .forEach((s) => items.push({ g: 'grpSnippets', icon: 'zap', label: s.name, sub: s.command.split('\n')[0], run: () => tab ? runSnippet(tab, s) : openSnipEditor(s) }));
+
+  forwards.filter((f) => hit((f.name || '') + ' ' + fwdDesc(f))).slice(0, 5)
+    .forEach((f) => {
+      const on = fwdState.get(f.id) === 'running';
+      items.push({ g: 'grpForwards', icon: 'forward', label: `${on ? t('fStop') : t('fStart')} · ${f.name || fwdDesc(f)}`, sub: fwdDesc(f), run: () => toggleFwd(f) });
+    });
+
   [
     { icon: 'plus', label: t('newHost'), run: () => { setNav('hosts'); openHostEditor(null); } },
-    { icon: 'plus', label: t('newSnippet'), run: () => { setNav('snippets'); openSnipEditor(null); } },
     { icon: 'download', label: t('importSsh'), run: () => { setNav('hosts'); importSshConfig(false); } },
+    { icon: 'plus', label: t('newSnippet'), run: () => { setNav('snippets'); openSnipEditor(null); } },
     { icon: 'forward', label: t('addFwd'), run: () => { setNav('forwards'); openFwdEditor(null); } },
-    { icon: 'sun', label: t('cmdToggleTheme'), run: () => { settings.theme = isDark() ? 'light' : 'dark'; saveSettings(); applySettings(); syncSettingsUI(); } },
+    { icon: 'sidebar', label: t('cmdToggleSidebar'), sub: 'Ctrl+B', run: toggleSidebar },
+    { icon: settings.hostView === 'grid' ? 'list' : 'grid', label: t('cmdToggleView'), run: () => { settings.hostView = settings.hostView === 'grid' ? 'list' : 'grid'; saveSettings(); syncSettingsUI(); renderHosts(); } },
+    { icon: isDark() ? 'sun' : 'moon', label: t('cmdToggleTheme'), run: () => { settings.theme = isDark() ? 'light' : 'dark'; saveSettings(); applySettings(); syncSettingsUI(); } },
+    { icon: 'globe', label: t('cmdSwitchLang'), run: () => { settings.lang = settings.lang === 'zh' ? 'en' : 'zh'; saveSettings(); syncSettingsUI(); refreshTexts(); } },
     { icon: 'sliders', label: t('settings'), run: () => setNav('settings') },
   ].filter((a) => hit(a.label)).forEach((a) => items.push({ g: 'grpActions', ...a }));
+
   palItems = items; palSel = 0;
   let last = '';
   $('#palList').innerHTML = items.map((it, i) => {
@@ -965,9 +1264,10 @@ $('#palList').addEventListener('click', (e) => { const b = e.target.closest('.pa
 $('#palList').addEventListener('mousemove', (e) => { const b = e.target.closest('.pal-item'); if (b && +b.dataset.i !== palSel) { palSel = +b.dataset.i; markPal(); } });
 $('#palette').addEventListener('mousedown', (e) => { if (e.target.id === 'palette') closePalette(); });
 
-// ---------- keyboard ----------
+// ---------- global keyboard ----------
 document.addEventListener('keydown', (e) => {
   if (e.ctrlKey && !e.shiftKey && e.code === 'KeyK') { e.preventDefault(); return $('#palette').classList.contains('hidden') ? openPalette() : closePalette(); }
+  if (e.ctrlKey && !e.shiftKey && e.code === 'KeyB') { e.preventDefault(); return toggleSidebar(); }
   if (e.key === 'Escape' && !$('#palette').classList.contains('hidden')) return closePalette();
   if (e.key === 'Escape') {
     hideMenu();
@@ -980,12 +1280,16 @@ document.addEventListener('keydown', (e) => {
     switchTab(ids[(ids.indexOf(activeTab) + (e.shiftKey ? ids.length - 1 : 1)) % ids.length]);
   }
   if (e.ctrlKey && e.shiftKey && e.code === 'KeyW' && activeTab !== 'home') { e.preventDefault(); closeTab(activeTab); }
-  if (e.ctrlKey && e.shiftKey && e.code === 'KeyD' && tabs.has(activeTab)) { e.preventDefault(); const tb = tabs.get(activeTab); if (paneList(activeTab).length < 4) openSession(tb.hostId, tb.quick, tb.sid); else toast(t('maxPanes'), true); }
+  if (e.ctrlKey && e.shiftKey && e.code === 'KeyD' && tabs.has(activeTab)) {
+    e.preventDefault();
+    const tb = tabs.get(activeTab);
+    if (paneList(activeTab).length < 4) openSession(tb.hostId, tb.quick, tb.sid); else toast(t('maxPanes'), true);
+  }
   if (e.ctrlKey && e.shiftKey && e.code === 'KeyT') { e.preventDefault(); setNav('hosts'); }
   if (e.ctrlKey && !e.shiftKey && (e.code === 'Equal' || e.code === 'Minus' || e.code === 'Digit0')) {
     e.preventDefault();
     settings.fontSize = e.code === 'Digit0' ? 14 : Math.min(24, Math.max(10, settings.fontSize + (e.code === 'Minus' ? -1 : 1)));
-    applySettings(); saveSettings();
+    applySettings(); syncSettingsUI(); saveSettings();
   }
 });
 
@@ -993,8 +1297,10 @@ document.addEventListener('keydown', (e) => {
 (async function init() {
   settings = { ...DEFAULTS, ...(await api.settings.get()) };
   if (!['system', 'dark', 'light'].includes(settings.theme)) settings.theme = 'system';
+  if (!['grid', 'list'].includes(settings.hostView)) settings.hostView = 'grid';
   if (!settings.lang) settings.lang = navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en';
   applySettings();
+  syncSettingsUI();
   await Promise.all([loadHosts(), loadSnippets(), loadForwards()]);
   refreshTexts();
   $('#omni').focus();

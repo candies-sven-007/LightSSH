@@ -10,204 +10,337 @@
 <body>
 
 <aside id="sidebar">
-  <div class="brand drag"><span class="logo"><i data-ic="terminal"></i></span><span class="wordmark">LightSSH</span></div>
+  <div class="sb-head drag">
+    <div class="brand">
+      <span class="logo"><i data-ic="terminal"></i></span>
+      <span class="wordmark">LightSSH</span>
+    </div>
+    <button class="ib sb-btn" id="btnSidebar" data-i18n-title="toggleSidebar"><i data-ic="sidebar"></i></button>
+  </div>
+
+  <button class="sb-omni" id="btnQuickPalette">
+    <i data-ic="search"></i>
+    <span data-i18n="quickAction"></span>
+    <kbd>Ctrl K</kbd>
+  </button>
+
+  <div class="side-label" data-i18n="navSection"></div>
   <nav>
     <button class="nav on" data-nav="hosts"><i data-ic="server"></i><span data-i18n="hosts"></span><em id="navHostCount"></em></button>
     <button class="nav" data-nav="snippets"><i data-ic="zap"></i><span data-i18n="snippets"></span><em id="navSnipCount"></em></button>
     <button class="nav" data-nav="forwards"><i data-ic="forward"></i><span data-i18n="forwards"></span><em id="navFwdCount"></em></button>
   </nav>
-  <div class="side-label" id="liveLabel" data-i18n="sessions"></div>
+
+  <div class="side-label hidden" id="liveLabel" data-i18n="sessions"></div>
   <div id="liveList"></div>
+
   <span class="grow"></span>
-  <button class="nav" data-nav="settings"><i data-ic="sliders"></i><span data-i18n="settings"></span></button>
+
+  <div class="sb-foot">
+    <button class="nav" data-nav="settings"><i data-ic="sliders"></i><span data-i18n="settings"></span></button>
+    <div class="sb-tools">
+      <button class="ib" id="btnQuickTheme" data-i18n-title="cmdToggleTheme"><span id="quickThemeIc"></span></button>
+      <button class="lang-chip" id="btnQuickLang" data-i18n-title="cmdSwitchLang">EN</button>
+    </div>
+  </div>
 </aside>
 
 <main id="main">
-  <div id="tabbar" class="drag">
-    <div class="tab active" data-tab="home"><span id="homeTabIcon" class="tic"><i data-ic="server"></i></span><span class="tl" id="homeTabLabel"></span></div>
-  </div>
+  <header id="tabbar" class="drag">
+    <button class="ib sb-open" id="btnSidebarOpen" data-i18n-title="toggleSidebar"><i data-ic="sidebar"></i></button>
+    <div class="tab active" data-tab="home">
+      <span id="homeTabIcon" class="tic"><i data-ic="server"></i></span>
+      <span class="tl" id="homeTabLabel"></span>
+    </div>
+    <button class="ib tab-add" id="btnTabNew" data-i18n-title="newTabTip"><i data-ic="plus"></i></button>
+  </header>
+
   <div id="views">
     <!-- hosts -->
     <section id="view-hosts" class="view page active">
-      <div class="page-title"><div><h1 data-i18n="hosts"></h1><p id="hostsSub"></p></div>
-        <div class="row"><button class="btn" id="btnImport" data-i18n-title="importSshTip"><i data-ic="download"></i><span data-i18n="importSsh"></span></button>
-        <button class="btn dark" id="btnNewHost"><i data-ic="plus"></i><span data-i18n="newHost"></span></button></div></div>
-      <div class="page-head">
-        <div class="omni"><i data-ic="search"></i><input id="omni" spellcheck="false" data-i18n-ph="omniPh"><kbd>Ctrl K</kbd></div>
+      <div class="page-title">
+        <div class="title-block">
+          <div class="eyebrow" data-i18n="kickerHosts"></div>
+          <h1 data-i18n="hosts"></h1>
+          <p id="hostsSub"></p>
+        </div>
+        <div class="title-acts">
+          <button class="btn" id="btnImport" data-i18n-title="importSshTip"><i data-ic="download"></i><span data-i18n="importSsh"></span></button>
+          <button class="btn clay" id="btnNewHost"><i data-ic="plus"></i><span data-i18n="newHost"></span></button>
+        </div>
       </div>
+
+      <div class="page-head">
+        <div class="composer" id="omniBox">
+          <div class="comp-top">
+            <span class="comp-ic" id="omniBadge"><i data-ic="terminal"></i></span>
+            <input id="omni" spellcheck="false" autocomplete="off" data-i18n-ph="omniPh">
+            <button type="button" id="omniConnect" class="btn clay sm hidden"><span data-i18n="connect"></span><i data-ic="corner"></i></button>
+            <button type="button" id="omniPalette" class="kbd-btn" data-i18n-title="kPalette"><kbd>Ctrl K</kbd></button>
+          </div>
+          <div class="comp-bar">
+            <div class="filter-pills" id="groupPills"></div>
+            <div class="view-seg" id="hostViewSeg">
+              <button type="button" data-v="grid" data-i18n-title="viewGrid"><i data-ic="grid"></i></button>
+              <button type="button" data-v="list" data-i18n-title="viewList"><i data-ic="list"></i></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div id="hostsContent" class="page-body"></div>
     </section>
+
     <!-- snippets -->
     <section id="view-snippets" class="view page">
-      <div class="page-title"><div><h1 data-i18n="snippets"></h1><p data-i18n="snipSub"></p></div>
-        <button class="btn dark" id="btnNewSnip"><i data-ic="plus"></i><span data-i18n="newSnippet"></span></button></div>
+      <div class="page-title">
+        <div class="title-block">
+          <div class="eyebrow" data-i18n="kickerSnippets"></div>
+          <h1 data-i18n="snippets"></h1>
+          <p data-i18n="snipSub"></p>
+        </div>
+        <div class="title-acts">
+          <button class="btn clay" id="btnNewSnip"><i data-ic="plus"></i><span data-i18n="newSnippet"></span></button>
+        </div>
+      </div>
       <div class="page-head">
-        <div class="omni"><i data-ic="search"></i><input id="snipSearch" spellcheck="false" data-i18n-ph="searchSnippets"></div>
+        <div class="search-well">
+          <i data-ic="search"></i>
+          <input id="snipSearch" spellcheck="false" data-i18n-ph="searchSnippets">
+        </div>
       </div>
       <div id="snipContent" class="page-body"></div>
     </section>
+
     <!-- port forwarding -->
     <section id="view-forwards" class="view page">
-      <div class="page-title"><div><h1 data-i18n="forwards"></h1><p data-i18n="fwdSub"></p></div>
-        <button class="btn dark" id="btnNewFwd"><i data-ic="plus"></i><span data-i18n="newFwd"></span></button></div>
+      <div class="page-title">
+        <div class="title-block">
+          <div class="eyebrow" data-i18n="kickerForwards"></div>
+          <h1 data-i18n="forwards"></h1>
+          <p data-i18n="fwdSub"></p>
+        </div>
+        <div class="title-acts">
+          <button class="btn clay" id="btnNewFwd"><i data-ic="plus"></i><span data-i18n="newFwd"></span></button>
+        </div>
+      </div>
       <div id="fwdContent" class="page-body"></div>
     </section>
+
     <!-- settings -->
     <section id="view-settings" class="view page">
-      <div class="page-title narrow"><div><h1 data-i18n="settings"></h1><p data-i18n="setSub"></p></div></div>
+      <div class="page-title narrow">
+        <div class="title-block">
+          <div class="eyebrow" data-i18n="kickerSettings"></div>
+          <h1 data-i18n="settings"></h1>
+          <p data-i18n="setSub"></p>
+        </div>
+      </div>
       <div class="page-body narrow">
         <div class="card">
           <div class="card-label"><i data-ic="sun"></i><span data-i18n="appearance"></span></div>
-          <div class="set-row"><span data-i18n="theme"></span>
-            <div class="seg" id="setTheme"><button data-v="system" data-i18n="themeSystem"></button><button data-v="dark" data-i18n="themeDark"></button><button data-v="light" data-i18n="themeLight"></button></div></div>
-          <div class="set-row"><span data-i18n="language"></span>
-            <div class="seg" id="setLang"><button data-v="zh">中文</button><button data-v="en">English</button></div></div>
+          <div class="theme-grid" id="setTheme">
+            <button type="button" class="tcard" data-v="system">
+              <div class="tp tp-sys"><i></i><b></b></div>
+              <span data-i18n="themeSystem"></span>
+            </button>
+            <button type="button" class="tcard" data-v="light">
+              <div class="tp tp-light"><i></i><b></b></div>
+              <span data-i18n="themeLight"></span>
+            </button>
+            <button type="button" class="tcard" data-v="dark">
+              <div class="tp tp-dark"><i></i><b></b></div>
+              <span data-i18n="themeDark"></span>
+            </button>
+          </div>
+          <div class="set-row">
+            <span data-i18n="language"></span>
+            <div class="seg" id="setLang"><button type="button" data-v="zh">中文</button><button type="button" data-v="en">English</button></div>
+          </div>
         </div>
+
         <div class="card">
           <div class="card-label"><i data-ic="terminal"></i><span data-i18n="terminal"></span></div>
-          <div class="set-row"><span data-i18n="termColors"></span>
-            <div class="seg" id="setTermTheme"><button data-v="dark" data-i18n="ttDark"></button><button data-v="match" data-i18n="ttMatch"></button></div></div>
-          <div class="set-row"><span data-i18n="fontSize"></span><div class="range"><input type="range" id="setFont" min="10" max="24"><em id="setFontV"></em></div></div>
-          <div class="set-row"><span data-i18n="fontFamily"></span>
+          <div class="set-row">
+            <span data-i18n="termColors"></span>
+            <div class="seg" id="setTermTheme"><button type="button" data-v="dark" data-i18n="ttDark"></button><button type="button" data-v="match" data-i18n="ttMatch"></button></div>
+          </div>
+          <div class="set-row">
+            <span data-i18n="fontSize"></span>
+            <div class="range"><input type="range" id="setFont" min="10" max="24"><em id="setFontV"></em></div>
+          </div>
+          <div class="set-row">
+            <span data-i18n="fontFamily"></span>
             <select id="setFamily" class="input">
-              <option value="Cascadia Mono">Cascadia Mono</option><option value="Consolas">Consolas</option>
-              <option value="JetBrains Mono">JetBrains Mono</option><option value="Sarasa Mono SC">Sarasa Mono SC</option>
-              <option value="Fira Code">Fira Code</option><option value="Courier New">Courier New</option>
-            </select></div>
-          <div class="set-row"><span data-i18n="cursor"></span>
-            <div class="seg" id="setCursor"><button data-v="block" data-i18n="cBlock"></button><button data-v="bar" data-i18n="cBar"></button><button data-v="underline" data-i18n="cUnder"></button></div></div>
-          <div class="set-row"><span data-i18n="copyOnSelect"></span><label class="switch"><input type="checkbox" id="setCopySel"><i></i></label></div>
+              <option value="Cascadia Mono">Cascadia Mono</option>
+              <option value="Consolas">Consolas</option>
+              <option value="JetBrains Mono">JetBrains Mono</option>
+              <option value="Sarasa Mono SC">Sarasa Mono SC</option>
+              <option value="Fira Code">Fira Code</option>
+              <option value="Courier New">Courier New</option>
+            </select>
+          </div>
+          <div class="set-row">
+            <span data-i18n="cursor"></span>
+            <div class="seg" id="setCursor">
+              <button type="button" data-v="block" data-i18n="cBlock"></button>
+              <button type="button" data-v="bar" data-i18n="cBar"></button>
+              <button type="button" data-v="underline" data-i18n="cUnder"></button>
+            </div>
+          </div>
+          <div class="specimen" id="termSpecimen">
+            <span class="sp-prompt">ops@bastion</span><span class="sp-sep">:</span><span class="sp-dir">~/infra</span><span class="sp-dollar">$</span>
+            <span>ssh prod-db --port 22</span><i class="sp-cur" id="specCur"></i>
+          </div>
+          <div class="set-row">
+            <span data-i18n="copyOnSelect"></span>
+            <label class="switch"><input type="checkbox" id="setCopySel"><i></i></label>
+          </div>
         </div>
+
         <div class="card">
           <div class="card-label"><i data-ic="keyboard"></i><span data-i18n="shortcuts"></span></div>
           <div class="keys" id="keysList"></div>
         </div>
-        <p class="foot-note">LightSSH <span id="ver"></span> · Electron · ssh2 · xterm.js</p>
+        <p class="foot-note">LightSSH <span id="ver"></span> · Hark × Claude Edition · Electron · ssh2 · xterm.js</p>
       </div>
     </section>
-<!-- right drawer: host editor -->
-<aside id="hostDrawer" class="drawer">
-  <form id="hostForm" autocomplete="off">
-    <div class="drawer-head"><h2 id="formTitle"></h2><button type="button" class="ib" data-close><i data-ic="x"></i></button></div>
-    <div class="drawer-body">
-      <input type="hidden" name="id"><input type="hidden" name="copyFrom">
-      <div class="fgroup">
-        <div class="fg-label" data-i18n="general"></div>
-        <label><span data-i18n="fName"></span><input class="input" name="name" data-i18n-ph="fNamePh"></label>
-        <label><span data-i18n="fGroup"></span><input class="input" name="group" list="groupList" data-i18n-ph="fGroupPh"></label>
-        <datalist id="groupList"></datalist>
-      </div>
-      <div class="fgroup">
-        <div class="fg-label" data-i18n="address"></div>
-        <div class="row">
-          <label class="grow"><span data-i18n="fHost"></span><input class="input" name="host" required placeholder="192.168.1.10"></label>
-          <label class="w90"><span data-i18n="fPort"></span><input class="input" name="port" type="number" value="22" min="1" max="65535"></label>
-        </div>
-        <label><span data-i18n="fUser"></span><input class="input" name="username" required placeholder="root"></label>
-        <label><span data-i18n="fJump"></span><select class="input" name="jumpHostId" id="jumpSelect"></select><small class="hint" data-i18n="fJumpHint"></small></label>
-      </div>
-      <div class="fgroup">
-        <div class="fg-label" data-i18n="auth"></div>
-        <div class="seg auth">
-          <label><input type="radio" name="authType" value="password" checked><span><i data-ic="lock"></i><b data-i18n="authPwd"></b></span></label>
-          <label><input type="radio" name="authType" value="key"><span><i data-ic="key"></i><b data-i18n="authKey"></b></span></label>
-        </div>
-        <div class="auth-pwd"><label><span data-i18n="fPwd"></span><input class="input" name="password" type="password"></label></div>
-        <div class="auth-key hidden">
-          <label><span data-i18n="fKey"></span>
-            <div class="row"><input class="input grow mono" name="keyPath" readonly><button type="button" id="btnPickKey" class="btn" data-i18n="browse"></button></div></label>
-          <label><span data-i18n="fPass"></span><input class="input" name="passphrase" type="password"></label>
-        </div>
-      </div>
-    </div>
-    <div class="drawer-foot">
-      <button type="button" id="btnDel" class="ib danger" data-i18n-title="delete"><i data-ic="trash"></i></button>
-      <button type="button" id="btnDup" class="ib" data-i18n-title="duplicate"><i data-ic="copy"></i></button>
-      <span class="grow"></span>
-      <button type="submit" class="btn dark" data-i18n="save"></button>
-      <button type="button" id="btnSaveConnect" class="btn accent" data-i18n="saveConnect"></button>
-    </div>
-  </form>
-</aside>
 
-<!-- right drawer: snippet editor -->
-<aside id="snipDrawer" class="drawer">
-  <form id="snipForm">
-    <div class="drawer-head"><h2 id="snipTitle"></h2><button type="button" class="ib" data-close><i data-ic="x"></i></button></div>
-    <div class="drawer-body">
-      <input type="hidden" name="id">
-      <label><span data-i18n="sName"></span><input class="input" name="name" data-i18n-ph="sNamePh"></label>
-      <label><span data-i18n="sCmd"></span><textarea class="input mono" name="command" rows="8" required data-i18n-ph="sCmdPh" spellcheck="false"></textarea></label>
-    </div>
-    <div class="drawer-foot">
-      <button type="button" id="snipDel" class="ib danger" data-i18n-title="delete"><i data-ic="trash"></i></button>
-      <span class="grow"></span>
-      <button type="submit" class="btn dark" data-i18n="save"></button>
-    </div>
-  </form>
-</aside>
+    <div id="drawerScrim" class="drawer-scrim" data-close></div>
 
-<!-- right drawer: port forward editor -->
-<aside id="fwdDrawer" class="drawer">
-  <form id="fwdForm" autocomplete="off">
-    <div class="drawer-head"><h2 id="fwdTitle"></h2><button type="button" class="ib" data-close><i data-ic="x"></i></button></div>
-    <div class="drawer-body">
-      <input type="hidden" name="id">
-      <div class="fgroup">
-        <div class="fg-label" data-i18n="general"></div>
-        <label><span data-i18n="fName"></span><input class="input" name="name" data-i18n-ph="fwdNamePh"></label>
-        <div class="seg auth fwd-type">
-          <label><input type="radio" name="type" value="local" checked><span><b data-i18n="tLocal"></b></span></label>
-          <label><input type="radio" name="type" value="remote"><span><b data-i18n="tRemote"></b></span></label>
-          <label><input type="radio" name="type" value="dynamic"><span><b data-i18n="tDynamic"></b></span></label>
+    <!-- right drawer: host editor -->
+    <aside id="hostDrawer" class="drawer">
+      <form id="hostForm" autocomplete="off">
+        <div class="drawer-head"><h2 id="formTitle"></h2><button type="button" class="ib" data-close><i data-ic="x"></i></button></div>
+        <div class="drawer-body">
+          <input type="hidden" name="id"><input type="hidden" name="copyFrom">
+          <div class="fgroup">
+            <div class="fg-label" data-i18n="general"></div>
+            <label><span data-i18n="fName"></span><input class="input" name="name" data-i18n-ph="fNamePh"></label>
+            <label><span data-i18n="fGroup"></span><input class="input" name="group" list="groupList" data-i18n-ph="fGroupPh"></label>
+            <datalist id="groupList"></datalist>
+          </div>
+          <div class="fgroup">
+            <div class="fg-label" data-i18n="address"></div>
+            <div class="row">
+              <label class="grow"><span data-i18n="fHost"></span><input class="input mono" name="host" required placeholder="192.168.1.10"></label>
+              <label class="w90"><span data-i18n="fPort"></span><input class="input mono" name="port" type="number" value="22" min="1" max="65535"></label>
+            </div>
+            <label><span data-i18n="fUser"></span><input class="input mono" name="username" required placeholder="root"></label>
+            <label><span data-i18n="fJump"></span><select class="input" name="jumpHostId" id="jumpSelect"></select><small class="hint" data-i18n="fJumpHint"></small></label>
+          </div>
+          <div class="fgroup">
+            <div class="fg-label" data-i18n="auth"></div>
+            <div class="seg auth">
+              <label><input type="radio" name="authType" value="password" checked><span><i data-ic="lock"></i><b data-i18n="authPwd"></b></span></label>
+              <label><input type="radio" name="authType" value="key"><span><i data-ic="key"></i><b data-i18n="authKey"></b></span></label>
+            </div>
+            <div class="auth-pwd"><label><span data-i18n="fPwd"></span><input class="input" name="password" type="password"></label></div>
+            <div class="auth-key hidden">
+              <label><span data-i18n="fKey"></span>
+                <div class="row"><input class="input grow mono" name="keyPath" readonly><button type="button" id="btnPickKey" class="btn" data-i18n="browse"></button></div>
+              </label>
+              <label><span data-i18n="fPass"></span><input class="input" name="passphrase" type="password"></label>
+            </div>
+          </div>
         </div>
-        <p class="type-help" id="fwdHelp"></p>
-        <label><span data-i18n="fwdHost"></span><select class="input" name="hostId" id="fwdHostSelect" required></select></label>
-      </div>
-      <div class="fgroup">
-        <div class="fg-label" id="bindLabel"></div>
-        <div class="row">
-          <label class="grow"><span data-i18n="fBindHost"></span><input class="input mono" name="bindHost" placeholder="127.0.0.1"></label>
-          <label class="w90"><span data-i18n="fPort"></span><input class="input mono" name="bindPort" type="number" min="1" max="65535" required placeholder="8080"></label>
+        <div class="drawer-foot">
+          <button type="button" id="btnDel" class="ib danger" data-i18n-title="delete"><i data-ic="trash"></i></button>
+          <button type="button" id="btnDup" class="ib" data-i18n-title="duplicate"><i data-ic="copy"></i></button>
+          <span class="grow"></span>
+          <button type="submit" class="btn" data-i18n="save"></button>
+          <button type="button" id="btnSaveConnect" class="btn clay" data-i18n="saveConnect"></button>
         </div>
-      </div>
-      <div class="fgroup dest">
-        <div class="fg-label" id="destLabel"></div>
-        <div class="row">
-          <label class="grow"><span data-i18n="fDestHost"></span><input class="input mono" name="destHost" placeholder="127.0.0.1"></label>
-          <label class="w90"><span data-i18n="fPort"></span><input class="input mono" name="destPort" type="number" min="1" max="65535" placeholder="5432"></label>
-        </div>
-      </div>
-    </div>
-    <div class="drawer-foot">
-      <button type="button" id="fwdDel" class="ib danger" data-i18n-title="delete"><i data-ic="trash"></i></button>
-      <span class="grow"></span>
-      <button type="submit" class="btn" data-i18n="save"></button>
-      <button type="button" id="fwdSaveStart" class="btn dark" data-i18n="saveStart"></button>
-    </div>
-  </form>
-</aside>
+      </form>
+    </aside>
 
+    <!-- right drawer: snippet editor -->
+    <aside id="snipDrawer" class="drawer">
+      <form id="snipForm">
+        <div class="drawer-head"><h2 id="snipTitle"></h2><button type="button" class="ib" data-close><i data-ic="x"></i></button></div>
+        <div class="drawer-body">
+          <input type="hidden" name="id">
+          <label><span data-i18n="sName"></span><input class="input" name="name" data-i18n-ph="sNamePh"></label>
+          <label><span data-i18n="sCmd"></span><textarea class="input mono" name="command" rows="9" required data-i18n-ph="sCmdPh" spellcheck="false"></textarea></label>
+        </div>
+        <div class="drawer-foot">
+          <button type="button" id="snipDel" class="ib danger" data-i18n-title="delete"><i data-ic="trash"></i></button>
+          <span class="grow"></span>
+          <button type="submit" class="btn clay" data-i18n="save"></button>
+        </div>
+      </form>
+    </aside>
+
+    <!-- right drawer: port forward editor -->
+    <aside id="fwdDrawer" class="drawer">
+      <form id="fwdForm" autocomplete="off">
+        <div class="drawer-head"><h2 id="fwdTitle"></h2><button type="button" class="ib" data-close><i data-ic="x"></i></button></div>
+        <div class="drawer-body">
+          <input type="hidden" name="id">
+          <div class="fgroup">
+            <div class="fg-label" data-i18n="general"></div>
+            <label><span data-i18n="fName"></span><input class="input" name="name" data-i18n-ph="fwdNamePh"></label>
+            <div class="seg auth fwd-type">
+              <label><input type="radio" name="type" value="local" checked><span><b data-i18n="tLocal"></b></span></label>
+              <label><input type="radio" name="type" value="remote"><span><b data-i18n="tRemote"></b></span></label>
+              <label><input type="radio" name="type" value="dynamic"><span><b data-i18n="tDynamic"></b></span></label>
+            </div>
+            <p class="type-help" id="fwdHelp"></p>
+            <label><span data-i18n="fwdHost"></span><select class="input" name="hostId" id="fwdHostSelect" required></select></label>
+          </div>
+          <div class="fgroup">
+            <div class="fg-label" id="bindLabel"></div>
+            <div class="row">
+              <label class="grow"><span data-i18n="fBindHost"></span><input class="input mono" name="bindHost" placeholder="127.0.0.1"></label>
+              <label class="w90"><span data-i18n="fPort"></span><input class="input mono" name="bindPort" type="number" min="1" max="65535" required placeholder="8080"></label>
+            </div>
+          </div>
+          <div class="fgroup dest">
+            <div class="fg-label" id="destLabel"></div>
+            <div class="row">
+              <label class="grow"><span data-i18n="fDestHost"></span><input class="input mono" name="destHost" placeholder="127.0.0.1"></label>
+              <label class="w90"><span data-i18n="fPort"></span><input class="input mono" name="destPort" type="number" min="1" max="65535" placeholder="5432"></label>
+            </div>
+          </div>
+        </div>
+        <div class="drawer-foot">
+          <button type="button" id="fwdDel" class="ib danger" data-i18n-title="delete"><i data-ic="trash"></i></button>
+          <span class="grow"></span>
+          <button type="submit" class="btn" data-i18n="save"></button>
+          <button type="button" id="fwdSaveStart" class="btn clay" data-i18n="saveStart"></button>
+        </div>
+      </form>
+    </aside>
   </div>
 </main>
 
 <!-- prompt / confirm -->
 <div id="prompt" class="modal hidden">
-  <form id="promptForm" class="card dialog">
+  <form id="promptForm" class="dialog">
     <h2 id="promptTitle"></h2>
     <input id="promptInput" class="input">
     <div class="row end">
       <button type="button" id="promptCancel" class="btn" data-i18n="cancel"></button>
-      <button type="submit" id="promptOk" class="btn dark" data-i18n="ok"></button>
+      <button type="submit" id="promptOk" class="btn clay" data-i18n="ok"></button>
     </div>
   </form>
 </div>
 
+<!-- command palette -->
 <div id="palette" class="modal pal hidden">
   <div class="pal-box">
-    <div class="pal-in"><i data-ic="search"></i><input id="palInput" spellcheck="false" data-i18n-ph="palettePh"></div>
+    <div class="pal-in">
+      <i data-ic="search"></i>
+      <input id="palInput" spellcheck="false" data-i18n-ph="palettePh">
+      <kbd>Esc</kbd>
+    </div>
     <div id="palList"></div>
-    <div class="pal-foot"><span><kbd>↑</kbd><kbd>↓</kbd></span><span><kbd>Enter</kbd></span><span><kbd>Esc</kbd></span></div>
+    <div class="pal-foot">
+      <span><kbd>↑</kbd><kbd>↓</kbd></span>
+      <span><kbd>Enter</kbd></span>
+      <span class="grow"></span>
+      <span class="pal-brand">LightSSH</span>
+    </div>
   </div>
 </div>
 
