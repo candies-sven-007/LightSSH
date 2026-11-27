@@ -12,7 +12,7 @@ LightSSH 2.0 (Hark × Claude Edition)  —  简洁温润的 SSH 客户端 / A ca
 7. SFTP 文件面板：点击终端文件夹图标展开，支持路径面包屑跳转、文件和文件夹递归上传/下载、拖放上传、重命名与删除。
 8. Ctrl+K 打开命令面板；侧栏底部可一键切换浅色（羊皮）/ 深色（暖炭）与中英文。
 
-快捷键：Ctrl+K 命令面板 · Ctrl+B 侧边栏 · Ctrl+F 查找 · Ctrl+Shift+C/V 复制粘贴 · Ctrl+Shift+D 分屏
+快捷键：Ctrl+K 命令面板 · Ctrl+B 侧边栏 · Ctrl+F 查找 · Ctrl+C/V（或 Ctrl+Shift+C/V）复制粘贴 · Ctrl+Shift+D 分屏
         Ctrl+Tab 切换标签 · Ctrl+Shift+W 关闭 · Ctrl+Shift+T 回工作台 · Ctrl +/-/0 字号 · Enter 重连
 数据保存位置：%APPDATA%\LightSSH（卸载时会保留）
 
@@ -27,6 +27,6 @@ LightSSH 2.0 (Hark × Claude Edition)  —  简洁温润的 SSH 客户端 / A ca
 7. SFTP Panel: Artifact-style file browser with clickable breadcrumbs, recursive file & folder upload/download, and drag & drop.
 8. Press Ctrl+K for the Command Palette; toggle Parchment / Warm Umber theme and language right from the sidebar footer.
 
-Shortcuts: Ctrl+K palette · Ctrl+B sidebar · Ctrl+F find · Ctrl+Shift+C/V copy/paste · Ctrl+Shift+D split
+Shortcuts: Ctrl+K palette · Ctrl+B sidebar · Ctrl+F find · Ctrl+C/V (or Ctrl+Shift+C/V) copy/paste · Ctrl+Shift+D split
            Ctrl+Tab switch · Ctrl+Shift+W close · Ctrl+Shift+T workspace · Ctrl +/-/0 zoom · Enter reconnect
 Data folder: %APPDATA%\LightSSH (kept on uninstall)

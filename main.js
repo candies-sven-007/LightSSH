@@ -1,5 +1,5 @@
 // LightSSH - main process
-const { app, BrowserWindow, ipcMain, dialog, safeStorage, Menu, shell, nativeTheme, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, safeStorage, Menu, shell, nativeTheme, screen, clipboard } = require('electron');
 const os = require('os');
 const path = require('path');
 const fs = require('fs');
@@ -168,6 +168,16 @@ ipcMain.handle('dialog:pickKey', async () => {
     properties: ['openFile', 'showHiddenFiles'],
   });
   return r.canceled ? '' : r.filePaths[0];
+});
+
+// ---- clipboard & native input editing ----
+// Electron 45+ exposes clipboard in main process (Promise-based) rather than preload/renderer.
+ipcMain.handle('clip:read', async () => (await clipboard.readText()) || '');
+ipcMain.handle('clip:write', async (_e, text) => { await clipboard.writeText(String(text ?? '')); return true; });
+ipcMain.handle('edit:cmd', (_e, cmd) => {
+  if (!win || win.isDestroyed()) return false;
+  if (['cut', 'copy', 'paste', 'selectAll'].includes(cmd)) { win.webContents[cmd](); return true; }
+  return false;
 });
 
 // ---- known hosts ----

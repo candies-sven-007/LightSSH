@@ -56,6 +56,7 @@ const I18N = {
     colHost: '主机', colAddr: '连接地址', colAuth: '认证 / 链路', colGroup: '分组',
     cmdSwitchLang: '切换语言 (中文 / English)', cmdToggleView: '切换主机视图 (卡片 / 列表)', cmdToggleSidebar: '收起 / 展开侧边栏',
     newTabTip: '快速打开连接 (Ctrl+K)', localEnd: '本机', remoteEnd: '远端',
+    cut: '剪切', copyAddr: '复制连接地址', smartCtrlCV: '智能 Ctrl+C / Ctrl+V（选中时复制，Ctrl+V 直接粘贴）',
   },
   en: {
     hosts: 'Hosts', snippets: 'Snippets', searchHosts: 'Search hosts', searchSnippets: 'Filter snippets by title or command…',
@@ -114,5 +115,6 @@ const I18N = {
     colHost: 'Server', colAddr: 'Endpoint', colAuth: 'Auth / Route', colGroup: 'Group',
     cmdSwitchLang: 'Switch language (中文 / English)', cmdToggleView: 'Switch host layout (Cards / List)', cmdToggleSidebar: 'Toggle sidebar',
     newTabTip: 'Quick connect (Ctrl+K)', localEnd: 'Local', remoteEnd: 'Remote',
+    cut: 'Cut', copyAddr: 'Copy address', smartCtrlCV: 'Smart Ctrl+C / Ctrl+V (copy selection & paste directly)',
   },
 };

@@ -1,5 +1,5 @@
 /* LightSSH v2.0 renderer — Hark × Claude Edition */
-const VERSION = '2.0.0';
+const VERSION = '2.0.1';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -12,6 +12,7 @@ const DEFAULTS = {
   termTheme: 'dark',
   cursorStyle: 'bar',
   copyOnSelect: true,
+  smartCtrlCV: true,
   hostView: 'grid',
   sidebarCollapsed: false,
 };
@@ -158,6 +159,7 @@ function syncSettingsUI() {
   $('#setFont').value = settings.fontSize; $('#setFontV').textContent = settings.fontSize;
   $('#setFamily').value = settings.fontFamily;
   $('#setCopySel').checked = settings.copyOnSelect;
+  $('#setSmartCtrl').checked = settings.smartCtrlCV !== false;
   $('#specCur').dataset.c = settings.cursorStyle;
 }
 $('#setTheme').onclick = (e) => { const v = e.target.closest('[data-v]')?.dataset.v; if (!v) return; settings.theme = v; saveSettings(); applySettings(); syncSettingsUI(); };
@@ -168,6 +170,7 @@ $('#setFont').oninput = (e) => { settings.fontSize = +e.target.value; $('#setFon
 $('#setFont').onchange = saveSettings;
 $('#setFamily').onchange = (e) => { settings.fontFamily = e.target.value; applySettings(); saveSettings(); };
 $('#setCopySel').onchange = (e) => { settings.copyOnSelect = e.target.checked; saveSettings(); };
+$('#setSmartCtrl').onchange = (e) => { settings.smartCtrlCV = e.target.checked; saveSettings(); renderKeys(); };
 
 $('#btnSidebar').onclick = toggleSidebar;
 $('#btnSidebarOpen').onclick = toggleSidebar;
@@ -188,11 +191,12 @@ $('#hostViewSeg').onclick = (e) => {
 };
 
 function renderKeys() {
+  const copyKeys = settings.smartCtrlCV !== false ? 'Ctrl C / V · Ctrl Shift C / V' : 'Ctrl Shift C / V';
   const rows = [
     ['kPalette', 'Ctrl K'],
     ['kSidebar', 'Ctrl B'],
     ['kFind', 'Ctrl F'],
-    ['kCopy', 'Ctrl Shift C / V'],
+    ['kCopy', copyKeys],
     ['kSplit', 'Ctrl Shift D'],
     ['kTab', 'Ctrl Tab'],
     ['kClose', 'Ctrl Shift W'],
@@ -200,7 +204,21 @@ function renderKeys() {
     ['kFont', 'Ctrl + / − / 0'],
     ['kRe', 'Enter'],
   ];
-  $('#keysList').innerHTML = rows.map(([k, v]) => `<div class="key-row"><span>${t(k)}</span><span>${v.split(' ').map((x) => x === '/' ? '<i>/</i>' : `<kbd>${x}</kbd>`).join('')}</span></div>`).join('');
+  $('#keysList').innerHTML = rows.map(([k, v]) => `<div class="key-row"><span>${t(k)}</span><span>${v.split(' ').map((x) => (x === '/' || x === '·') ? `<i>${x}</i>` : `<kbd>${x}</kbd>`).join('')}</span></div>`).join('');
+}
+
+// ---------- clipboard helpers (async main-process IPC + safe fallback) ----------
+async function readClip() {
+  try { return (await api.clip.read()) || ''; }
+  catch { try { return (await navigator.clipboard.readText()) || ''; } catch { return ''; } }
+}
+async function writeClip(txt, notify = false) {
+  if (txt == null || txt === '') return false;
+  const str = String(txt);
+  try { await api.clip.write(str); }
+  catch { try { await navigator.clipboard.writeText(str); } catch { return false; } }
+  if (notify) toast(t('copied'));
+  return true;
 }
 
 // ---------- toast / prompt / drawers ----------
@@ -239,7 +257,8 @@ const openDrawer = (sel) => { closeDrawers(); $('#drawerScrim').classList.add('o
 const closeDrawers = () => { $('#drawerScrim').classList.remove('open'); $$('.drawer').forEach((d) => d.classList.remove('open')); };
 document.addEventListener('click', (e) => { if (e.target.closest('[data-close]')) closeDrawers(); });
 
-// ---------- context menu ----------
+// ---------- context menu (preserves input/terminal focus & selection) ----------
+$('#ctx').addEventListener('mousedown', (e) => e.preventDefault());
 function showMenu(x, y, items) {
   const el = $('#ctx');
   el.innerHTML = items.map((it, i) => it === '-' ? '<div class="sep"></div>'
@@ -253,6 +272,36 @@ function showMenu(x, y, items) {
 function hideMenu() { $('#ctx').classList.add('hidden'); }
 document.addEventListener('mousedown', (e) => { if (!e.target.closest('#ctx')) hideMenu(); });
 window.addEventListener('blur', hideMenu);
+
+// Universal right-click Cut / Copy / Paste / Select All on any <input>, <textarea>, or selected UI text
+document.addEventListener('contextmenu', (e) => {
+  if (e.defaultPrevented) return;
+  const inp = e.target.closest('input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), textarea:not(.xterm-helper-textarea)');
+  if (inp) {
+    e.preventDefault();
+    inp.focus();
+    const editable = !inp.readOnly && !inp.disabled;
+    const isPwd = inp.type === 'password';
+    let hasSel = false;
+    try { hasSel = inp.selectionStart != null ? inp.selectionStart !== inp.selectionEnd : !!window.getSelection()?.toString(); }
+    catch { hasSel = !!window.getSelection()?.toString(); }
+    showMenu(e.clientX, e.clientY, [
+      { icon: 'scissors', label: t('cut'), hint: 'Ctrl+X', disabled: !editable || isPwd || !hasSel, run: () => { inp.focus(); api.editCmd('cut'); } },
+      { icon: 'copy', label: t('copy'), hint: 'Ctrl+C', disabled: isPwd || !hasSel, run: () => { inp.focus(); api.editCmd('copy'); } },
+      { icon: 'clipboard', label: t('paste'), hint: 'Ctrl+V', disabled: !editable, run: () => { inp.focus(); api.editCmd('paste'); } },
+      '-',
+      { icon: 'select', label: t('selectAll'), hint: 'Ctrl+A', disabled: !inp.value, run: () => { inp.focus(); inp.select(); } },
+    ]);
+    return;
+  }
+  const selText = window.getSelection()?.toString();
+  if (selText) {
+    e.preventDefault();
+    showMenu(e.clientX, e.clientY, [
+      { icon: 'copy', label: t('copy'), hint: 'Ctrl+C', run: () => writeClip(selText, true) },
+    ]);
+  }
+});
 
 // ---------- data & helpers ----------
 async function loadHosts() { hosts = await api.hosts.list(); renderHosts(); renderLive(); if (forwards.length) renderForwards(); }
@@ -471,6 +520,7 @@ function hostMenu(x, y, h) {
   if (!h) return;
   showMenu(x, y, [
     { icon: 'terminal', label: t('connect'), run: () => openSession(h.id) },
+    { icon: 'copy', label: t('copyAddr'), run: () => writeClip(hostAddr(h), true) },
     { icon: 'edit', label: t('edit'), run: () => openHostEditor(h) },
     { icon: 'copy', label: t('duplicate'), run: () => openHostEditor(h, true) },
     '-',
@@ -516,7 +566,7 @@ $('#snipContent').addEventListener('click', (e) => {
   const c = e.target.closest('.scard'); if (!c) return;
   const s = snippets.find((x) => x.id === c.dataset.sid); if (!s) return;
   const act = e.target.closest('[data-act]')?.dataset.act;
-  if (act === 'copy') { api.clip.write(s.command); return toast(t('copied')); }
+  if (act === 'copy') { writeClip(s.command, true); return; }
   if (act === 'run') {
     const tb = activeConnectedTab();
     if (!tb) return toast(t('noSession'), true);
@@ -532,7 +582,7 @@ $('#snipContent').addEventListener('contextmenu', (e) => {
   showMenu(e.clientX, e.clientY, [
     { icon: 'play', label: t('run'), disabled: !activeConnectedTab(), run: () => { const tb = activeConnectedTab(); if (tb) { switchTab(tb.sid); runSnippet(tb, s); } } },
     { icon: 'edit', label: t('edit'), run: () => openSnipEditor(s) },
-    { icon: 'copy', label: t('copy'), run: () => { api.clip.write(s.command); toast(t('copied')); } },
+    { icon: 'copy', label: t('copy'), run: () => writeClip(s.command, true) },
     '-',
     { icon: 'trash', label: t('delete'), danger: true, run: async () => { if (await confirmBox(t('confirmDelSnip', s.name))) { await api.snippets.remove(s.id); loadSnippets(); } } },
   ]);
@@ -792,32 +842,68 @@ function openSession(hostId, quick, splitFrom) {
     try { const gl = new WebglAddon.WebglAddon(); gl.onContextLoss(() => gl.dispose()); term.loadAddon(gl); } catch {}
   }
 
-  const tab = { sid, hostId, quick, label, term, fitAddon, search, view, tabEl, state: 'connecting', cwd: '', files: null, showHidden: false, password: null, passphrase: null, fitRaf: 0 };
+  const tab = { sid, hostId, quick, label, term, fitAddon, search, view, tabEl, state: 'connecting', cwd: '', files: null, showHidden: false, password: null, passphrase: null, fitRaf: 0, lastKeyPaste: 0 };
   tabs.set(sid, tab);
 
-  const paste = () => { const txt = api.clip.read(); if (txt && tab.state === 'connected') term.paste(txt); };
+  const termEl = $('.term', view);
   term.onData((d) => { if (tab.state === 'connected') api.ssh.write(sid, d); else if (d === '\r' && tab.state === 'closed') connect(tab); });
   term.onResize(({ cols, rows }) => api.ssh.resize(sid, cols, rows));
-  term.onSelectionChange(() => { const s = term.getSelection(); if (s && settings.copyOnSelect) api.clip.write(s); });
-  $('.term', view).addEventListener('contextmenu', (e) => {
-    e.preventDefault();
+  term.onSelectionChange(() => { const s = term.getSelection(); if (s && settings.copyOnSelect) writeClip(s, false); });
+
+  // Capture-phase paste guard prevents duplicate paste when keydown already pasted, while still allowing OS/IME paste events
+  termEl.addEventListener('paste', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    if (Date.now() - tab.lastKeyPaste < 120) return;
+    const txt = e.clipboardData?.getData('text/plain');
+    if (txt && tab.state === 'connected') term.paste(txt);
+  }, true);
+
+  // Middle-click paste (Windows / Linux terminal convention)
+  termEl.addEventListener('auxclick', (e) => {
+    if (e.button === 1) { e.preventDefault(); pasteToTerm(tab); }
+  });
+
+  // Capture-phase contextmenu stops xterm's internal browser-hack from floating a 20x20 textarea over the canvas
+  termEl.addEventListener('contextmenu', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    focusPane(sid);
     const sel = term.getSelection();
+    const smart = settings.smartCtrlCV !== false;
     showMenu(e.clientX, e.clientY, [
-      { icon: 'copy', label: t('copy'), hint: 'Ctrl+Shift+C', disabled: !sel, run: () => { api.clip.write(sel); toast(t('copied')); } },
-      { icon: 'clipboard', label: t('paste'), hint: 'Ctrl+Shift+V', run: paste },
-      { icon: 'select', label: t('selectAll'), run: () => term.selectAll() },
+      { icon: 'copy', label: t('copy'), hint: smart ? 'Ctrl+C' : 'Ctrl+Shift+C', disabled: !sel, run: () => { copyFromTerm(tab, true, true); term.focus(); } },
+      { icon: 'clipboard', label: t('paste'), hint: smart ? 'Ctrl+V' : 'Ctrl+Shift+V', disabled: tab.state !== 'connected', run: () => pasteToTerm(tab) },
+      { icon: 'select', label: t('selectAll'), run: () => { term.selectAll(); term.focus(); } },
       '-',
       { icon: 'search', label: t('find'), hint: 'Ctrl+F', run: () => openFind(tab) },
-      { icon: 'eraser', label: t('clear'), run: () => term.clear() },
+      { icon: 'eraser', label: t('clear'), run: () => { term.clear(); term.focus(); } },
     ]);
-  });
+  }, true);
+
   term.attachCustomKeyEventHandler((e) => {
-    if (e.type !== 'keydown') return true;
-    if (e.ctrlKey && e.shiftKey && e.code === 'KeyC') { const s = term.getSelection(); if (s) api.clip.write(s); return false; }
-    if (e.ctrlKey && e.shiftKey && e.code === 'KeyV') { paste(); return false; }
-    if (e.ctrlKey && !e.shiftKey && e.code === 'KeyF') { openFind(tab); return false; }
+    if (e.type !== 'keydown' || e.isComposing) return true;
+    const smart = settings.smartCtrlCV !== false;
+    // Copy: Ctrl+Shift+C, Ctrl+Insert, or Smart Ctrl+C when terminal has an active selection
+    if ((e.ctrlKey && e.shiftKey && !e.altKey && e.code === 'KeyC') || (e.ctrlKey && !e.shiftKey && !e.altKey && e.code === 'Insert')) {
+      e.preventDefault(); e.stopPropagation();
+      copyFromTerm(tab, false, true);
+      return false;
+    }
+    if (smart && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.code === 'KeyC' && term.hasSelection() && term.getSelection()) {
+      e.preventDefault(); e.stopPropagation();
+      copyFromTerm(tab, true, true);
+      return false;
+    }
+    // Paste: Ctrl+Shift+V, Shift+Insert, or Smart Ctrl+V (preventDefault blocks both raw ^V and duplicate Chromium paste)
+    if ((e.ctrlKey && e.shiftKey && !e.altKey && e.code === 'KeyV')
+      || (!e.ctrlKey && e.shiftKey && !e.altKey && e.code === 'Insert')
+      || (smart && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.code === 'KeyV')) {
+      e.preventDefault(); e.stopPropagation();
+      pasteToTerm(tab);
+      return false;
+    }
+    if (e.ctrlKey && !e.shiftKey && e.code === 'KeyF') { e.preventDefault(); e.stopPropagation(); openFind(tab); return false; }
     if (e.ctrlKey && !e.shiftKey && (e.code === 'KeyK' || e.code === 'KeyB' || e.code === 'Tab' || e.code === 'Equal' || e.code === 'Minus' || e.code === 'Digit0')) return false;
-    if (e.ctrlKey && e.shiftKey && (e.code === 'KeyW' || e.code === 'KeyT' || e.code === 'KeyD')) return false;
+    if (e.ctrlKey && e.shiftKey && (e.code === 'KeyW' || e.code === 'KeyT' || e.code === 'KeyD' || e.code === 'Tab')) return false;
     return true;
   });
   tab.ro = new ResizeObserver(() => fit(tab));
@@ -842,6 +928,23 @@ function openSession(hostId, quick, splitFrom) {
 
   if (splitFrom && tabs.has(splitFrom) && paneList(splitFrom).length < 4) splitWith(splitFrom, sid); else switchTab(sid);
   connect(tab);
+}
+
+function copyFromTerm(tab, clearSel = false, notify = true) {
+  const sel = tab?.term?.getSelection();
+  if (!sel) return false;
+  writeClip(sel, notify);
+  if (clearSel) tab.term.clearSelection();
+  return true;
+}
+async function pasteToTerm(tab) {
+  if (!tab || tab.state !== 'connected') return;
+  tab.lastKeyPaste = Date.now();
+  const txt = await readClip();
+  if (txt && tab.state === 'connected') {
+    tab.term.paste(txt);
+    tab.term.focus();
+  }
 }
 
 function toggleSnipPop(tab) {
@@ -1015,7 +1118,7 @@ async function fileAction(tab, act, f) {
     if (act === 'download') { const p = await api.sftp.download(tab.sid, tab.cwd, f.name, f.isDir); hideProg(tab); if (p) toast(t('downloaded', p)); }
     if (act === 'rename') { const n = await ask(t('newName'), { value: f.name }); if (n && n !== f.name) { await api.sftp.rename(tab.sid, tab.cwd, f.name, n); sftpLoad(tab); } }
     if (act === 'delete') { if (await confirmBox(t('confirmDel', f.name))) { await api.sftp.remove(tab.sid, tab.cwd, f.name, f.isDir); sftpLoad(tab); } }
-    if (act === 'copyPath') { api.clip.write(fullPath(tab, f.name)); toast(t('copied')); }
+    if (act === 'copyPath') { await writeClip(fullPath(tab, f.name), true); }
     if (act === 'cd') { const p = f ? fullPath(tab, f.name) : tab.cwd; api.ssh.write(tab.sid, `cd '${p.replace(/'/g, `'\\''`)}'\r`); tab.term.focus(); }
   } catch (err) { hideProg(tab); toast(t('failed', cleanErr(err)), true); }
 }
@@ -1041,6 +1144,7 @@ function bindSftp(tab) {
   });
   pane.addEventListener('dblclick', (e) => { const row = e.target.closest('.file'); if (row) fileAction(tab, 'open', tab.files[row.dataset.i]); });
   pane.addEventListener('contextmenu', (e) => {
+    if (e.target.closest('input, textarea')) return; // let universal input menu handle path bar
     const row = e.target.closest('.file'); e.preventDefault();
     if (!row) return showMenu(e.clientX, e.clientY, [
       { icon: 'upload', label: t('upload'), run: () => $('[data-s="upload"]', pane).click() },
@@ -1273,6 +1377,27 @@ document.addEventListener('keydown', (e) => {
     hideMenu();
     if ($('#prompt')._cancel) $('#prompt')._cancel(); else closeDrawers();
     $$('.snip-pop').forEach((p) => p.classList.add('hidden'));
+  }
+  // Fallback when viewing a terminal tab while focus drifted outside term.textarea (e.g. after clicking toolbar/tab)
+  const inField = e.target.closest('input, textarea, select, [contenteditable]');
+  const overlayOpen = !$('#palette').classList.contains('hidden') || !$('#prompt').classList.contains('hidden') || $('.drawer.open');
+  if (!inField && !overlayOpen && tabs.has(activeTab)) {
+    const tb = tabs.get(activeTab);
+    const smart = settings.smartCtrlCV !== false;
+    if ((e.ctrlKey && e.shiftKey && !e.altKey && e.code === 'KeyC') || (e.ctrlKey && !e.shiftKey && !e.altKey && e.code === 'Insert')) {
+      if (copyFromTerm(tb, false, true)) e.preventDefault();
+      return;
+    }
+    if (smart && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.code === 'KeyC' && tb.term.hasSelection() && tb.term.getSelection()) {
+      e.preventDefault(); copyFromTerm(tb, true, true);
+      return;
+    }
+    if ((e.ctrlKey && e.shiftKey && !e.altKey && e.code === 'KeyV')
+      || (!e.ctrlKey && e.shiftKey && !e.altKey && e.code === 'Insert')
+      || (smart && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.code === 'KeyV')) {
+      e.preventDefault(); pasteToTerm(tb);
+      return;
+    }
   }
   if (e.ctrlKey && e.key === 'Tab') {
     e.preventDefault();

@@ -46,7 +46,7 @@ Download `LightSSH-Setup-vX.Y.Z.exe` (per-user, no admin) or the portable zip fr
 | 收起 / 展开侧栏 · Toggle sidebar | `Ctrl+B` |
 | 查找 / Find | `Ctrl+F` |
 | 分屏 / Split | `Ctrl+Shift+D` |
-| 复制 / 粘贴 · Copy / Paste | `Ctrl+Shift+C` / `Ctrl+Shift+V` |
+| 复制 / 粘贴 · Copy / Paste | `Ctrl+C`（选中时）/ `Ctrl+V` · `Ctrl+Shift+C` / `Ctrl+Shift+V` · `Ctrl+Ins` / `Shift+Ins` |
 | 切换标签 / Switch tab | `Ctrl+Tab` |
 | 关闭标签 / Close tab | `Ctrl+Shift+W` |
 | 回工作台 / Workspace | `Ctrl+Shift+T` |

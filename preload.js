@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer, webUtils, clipboard } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
   hosts: {
@@ -26,7 +26,11 @@ contextBridge.exposeInMainWorld('api', {
     set: (s) => ipcRenderer.invoke('settings:set', s),
   },
   pickKey: () => ipcRenderer.invoke('dialog:pickKey'),
-  clip: { read: () => clipboard.readText(), write: (t) => clipboard.writeText(t) },
+  clip: {
+    read: () => ipcRenderer.invoke('clip:read'),
+    write: (t) => ipcRenderer.invoke('clip:write', t),
+  },
+  editCmd: (cmd) => ipcRenderer.invoke('edit:cmd', cmd),
   pathForFile: (f) => webUtils.getPathForFile(f),
   ssh: {
     connect: (o) => ipcRenderer.invoke('ssh:connect', o),

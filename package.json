@@ -1,7 +1,7 @@
 {
   "name": "lightssh",
   "productName": "LightSSH",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "A clean SSH client (中文 / English)",
   "main": "main.js",
   "author": "Candies Sven",
